@@ -65,26 +65,6 @@ while (true) {
 
     $clientes = isset($dados['data']) && is_array($dados['data']) ? $dados['data'] : [];
 
-    // Alguns contatos não são clientes; filtra apenas os que possuem tipo CLIENTE
-    $clientes = array_values(array_filter($clientes, static function ($contato) {
-        if (!is_array($contato)) {
-            return false;
-        }
-
-        if (isset($contato['tipos']) && is_array($contato['tipos'])) {
-            foreach ($contato['tipos'] as $tipo) {
-                if (is_string($tipo) && strcasecmp($tipo, 'cliente') === 0) {
-                    return true;
-                }
-                if (is_array($tipo) && isset($tipo['descricao']) && strcasecmp($tipo['descricao'], 'cliente') === 0) {
-                    return true;
-                }
-            }
-        }
-
-        return isset($contato['tipo']) && strcasecmp((string) $contato['tipo'], 'cliente') === 0;
-    }));
-
     $todosClientes = array_merge($todosClientes, $clientes);
 
     $meta = isset($dados['page']) && is_array($dados['page']) ? $dados['page'] : [];
