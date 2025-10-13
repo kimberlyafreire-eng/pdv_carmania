@@ -19,49 +19,116 @@ if(!$accessToken){
 
 $caminhoCache = __DIR__ . '/../cache/clientes-cache.json';
 
+function consultarPaginaContatos(int $pagina, int $limite, string $accessToken): array
+{
+    $query = http_build_query([
+        'pagina' => $pagina,
+        'limite' => $limite,
+    ], '', '&', PHP_QUERY_RFC3986);
+
+    $url = "https://www.bling.com.br/Api/v3/contatos?$query";
+
+    $tentativas = 0;
+    $tentativasMaximas = 5;
+    $atraso = 1;
+
+    while ($tentativas < $tentativasMaximas) {
+        $tentativas++;
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $accessToken",
+        ]);
+
+        $resposta = curl_exec($ch);
+        if ($resposta === false) {
+            $erroCurl = curl_error($ch);
+            curl_close($ch);
+
+            return [
+                'erro' => true,
+                'status' => 500,
+                'mensagem' => 'Falha na comunicação com o Bling',
+                'detalhes' => $erroCurl,
+            ];
+        }
+
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $tamanhoCabecalho = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $cabecalhoBruto = substr($resposta, 0, $tamanhoCabecalho);
+        $corpo = substr($resposta, $tamanhoCabecalho);
+        curl_close($ch);
+
+        if ($httpCode === 429 || ($httpCode >= 500 && $httpCode < 600)) {
+            $retryAfter = null;
+            $linhasCabecalho = explode("\r\n", $cabecalhoBruto);
+            foreach ($linhasCabecalho as $linha) {
+                if (stripos($linha, 'Retry-After:') === 0) {
+                    $valor = trim(substr($linha, strlen('Retry-After:')));
+                    if (is_numeric($valor)) {
+                        $retryAfter = (int) $valor;
+                    }
+                    break;
+                }
+            }
+
+            $espera = $retryAfter !== null ? max(1, $retryAfter) : $atraso;
+            sleep($espera);
+            $atraso = min($atraso * 2, 30);
+            continue;
+        }
+
+        if ($httpCode !== 200) {
+            return [
+                'erro' => true,
+                'status' => $httpCode,
+                'mensagem' => 'Erro ao consultar Bling',
+                'detalhes' => $corpo,
+            ];
+        }
+
+        $dados = json_decode($corpo, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return [
+                'erro' => true,
+                'status' => 500,
+                'mensagem' => 'Resposta inválida do Bling',
+            ];
+        }
+
+        return [
+            'erro' => false,
+            'dados' => $dados,
+        ];
+    }
+
+    return [
+        'erro' => true,
+        'status' => 429,
+        'mensagem' => 'Limite de tentativas ao consultar o Bling excedido',
+    ];
+}
+
 $pagina = 1;
 $limite = 100;
 $todosClientes = [];
 
 while (true) {
-    $query = http_build_query([
-        'pagina' => $pagina,
-        'limite' => $limite
-    ], '', '&', PHP_QUERY_RFC3986);
+    $resultado = consultarPaginaContatos($pagina, $limite, $accessToken);
 
-    $url = "https://www.bling.com.br/Api/v3/contatos?$query";
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: Bearer $accessToken"
-    ]);
-
-    $resposta = curl_exec($ch);
-    if ($resposta === false) {
-        $erroCurl = curl_error($ch);
-        curl_close($ch);
-
-        http_response_code(500);
-        echo json_encode(["erro" => "Falha na comunicação com o Bling", "detalhes" => $erroCurl]);
-        exit();
-    }
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($httpCode !== 200) {
-        http_response_code($httpCode);
-        echo json_encode(["erro" => "Erro ao consultar Bling", "http" => $httpCode]);
+    if ($resultado['erro']) {
+        http_response_code($resultado['status']);
+        echo json_encode([
+            'erro' => $resultado['mensagem'],
+            'detalhes' => $resultado['detalhes'] ?? null,
+        ]);
         exit();
     }
 
-    $dados = json_decode($resposta, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        http_response_code(500);
-        echo json_encode(["erro" => "Resposta inválida do Bling"]);
-        exit();
-    }
+    $dados = $resultado['dados'];
 
     $clientes = isset($dados['data']) && is_array($dados['data']) ? $dados['data'] : [];
 
