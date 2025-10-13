@@ -42,9 +42,14 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
   <style>
     body { background-color: #f8f9fa; }
     .navbar-custom { background-color: #dc3545; }
+    .navbar-custom .d-flex {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
     .produto-item { border-bottom: 1px solid #ddd; padding: 12px 0; }
     .summary-card {
-      background: #fff; border-radius: 8px; padding: 16px;
+      background: #fff; border-radius: 12px; padding: 16px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
     .estoque-btn {
@@ -54,6 +59,80 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       font-weight: bold;
     }
     .estoque-btn:hover { background: #dc3545; color: white; }
+
+    .modal-travado .modal-dialog {
+      margin: 0 auto;
+      max-width: 480px;
+      width: calc(100% - 2rem);
+    }
+
+    .modal-travado .modal-content {
+      border-radius: 16px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+    }
+
+    .modal-travado .modal-body {
+      max-height: 60vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    @media (max-width: 768px) {
+      .container { padding-left: 1rem; padding-right: 1rem; }
+      .summary-card { padding: 16px; }
+      .navbar-custom .btn { flex: 1 1 100%; }
+      .navbar-custom .d-flex { justify-content: center; }
+    }
+
+    @media (max-width: 576px) {
+      body { font-size: 0.95rem; }
+
+      .navbar-custom {
+        padding-top: 0.75rem !important;
+        padding-bottom: 0.75rem !important;
+      }
+
+      .navbar-custom .btn {
+        flex: 1 1 calc(50% - 0.5rem);
+        min-width: 140px;
+      }
+
+      .navbar-custom .btn:first-child {
+        flex: 0 0 auto;
+        min-width: unset;
+      }
+
+      .modal-travado {
+        padding: 1.5rem 1rem;
+      }
+
+      .modal-travado .modal-dialog {
+        margin: 0 auto;
+        width: 100%;
+        min-height: calc(100vh - 3rem);
+        display: flex;
+        align-items: center;
+      }
+
+      .modal-travado .modal-content {
+        width: 100%;
+        border-radius: 18px;
+      }
+
+      .modal-travado .modal-header,
+      .modal-travado .modal-footer {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .modal-travado .modal-footer .btn {
+        flex: 1 1 calc(50% - 0.5rem);
+      }
+
+      .modal-travado .modal-body {
+        max-height: 65vh;
+      }
+    }
   </style>
 </head>
 <body>
@@ -91,7 +170,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
   </div>
 
   <!-- Modal Cliente -->
-  <div class="modal fade" id="modalCliente" tabindex="-1">
+  <div class="modal fade modal-travado" id="modalCliente" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -139,7 +218,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
   </div>
 
   <!-- Modal Estoque -->
-  <div class="modal fade" id="modalEstoque" tabindex="-1">
+  <div class="modal fade modal-travado" id="modalEstoque" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
