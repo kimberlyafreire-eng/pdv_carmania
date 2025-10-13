@@ -4,6 +4,7 @@ if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
+$usuarioLogado = $_SESSION['usuario'] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -99,6 +100,9 @@ if (!isset($_SESSION['usuario'])) {
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
+    window.USUARIO_LOGADO = <?= json_encode($usuarioLogado) ?>;
+  </script>
+  <script>
     const fmt = (n) => "R$ " + (Number(n)||0).toFixed(2);
     const toNum = (v) => parseFloat((v ?? 0)) || 0;
 
@@ -168,8 +172,29 @@ if (!isset($_SESSION['usuario'])) {
       if (!carrinho.length) return alert("Carrinho vazio.");
 
         // 🔹 Recupera também o depósito selecionado salvo no localStorage
-        const depositoSelecionado = JSON.parse(localStorage.getItem("depositoSelecionado") || "null");
-        
+        const usuarioLogado = window.USUARIO_LOGADO || null;
+        const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
+        const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
+
+        function recuperarDeposito(chave) {
+          const bruto = localStorage.getItem(chave);
+          if (!bruto) return null;
+          try {
+            const parsed = JSON.parse(bruto);
+            if (parsed && parsed.id) return parsed;
+          } catch (err) {
+            console.warn("Cache de depósito inválido ao concluir venda, ignorando.", err);
+          }
+          localStorage.removeItem(chave);
+          return null;
+        }
+
+        let depositoSelecionado = recuperarDeposito(depositoStorageKey);
+        if (!depositoSelecionado && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
+          depositoSelecionado = recuperarDeposito(LEGACY_DEPOSITO_KEY);
+          localStorage.removeItem(LEGACY_DEPOSITO_KEY);
+        }
+
         const payload = {
           clienteId: clienteSelecionado.id,
           clienteNome: clienteSelecionado.nome || "",

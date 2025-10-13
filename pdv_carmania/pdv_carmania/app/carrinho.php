@@ -8,6 +8,7 @@ if (!isset($_SESSION['usuario'])) {
 // Caminho do banco de usuários
 $dbFile = __DIR__ . '/../data/pdv_users.sqlite';
 $estoquePadraoId = null;
+$usuarioLogado = $_SESSION['usuario'] ?? null;
 
 try {
   if (file_exists($dbFile)) {
@@ -26,7 +27,10 @@ try {
 }
 
 // Envia pro JS
-echo "<script>window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";</script>";
+echo "<script>
+window.USUARIO_LOGADO = " . json_encode($usuarioLogado) . ";
+window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
+</script>";
 
 ?>
 <!DOCTYPE html>
@@ -162,9 +166,45 @@ echo "<script>window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";<
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
     let descontoValor = parseFloat(localStorage.getItem("descontoValor") || 0);
     let descontoPercentual = parseFloat(localStorage.getItem("descontoPercentual") || 0);
-    let depositoSelecionado = JSON.parse(localStorage.getItem("depositoSelecionado") || "null");
+    const usuarioLogado = window.USUARIO_LOGADO || null;
+    const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
+    const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
     // 👇 vem do PHP (id do depósito padrão do usuário logado)
     const estoquePadraoUsuario = window.ESTOQUE_PADRAO_ID || null;
+
+    function lerDepositoDoStorage(chave) {
+      const bruto = localStorage.getItem(chave);
+      if (!bruto) return null;
+      try {
+        const parsed = JSON.parse(bruto);
+        if (parsed && parsed.id) return parsed;
+      } catch (err) {
+        console.warn("Cache de depósito inválido, removendo.", err);
+      }
+      localStorage.removeItem(chave);
+      return null;
+    }
+
+    let depositoSelecionado = lerDepositoDoStorage(depositoStorageKey);
+
+    // Migra e limpa cache legado (sem usuário atrelado)
+    if (!depositoSelecionado && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
+      const legado = lerDepositoDoStorage(LEGACY_DEPOSITO_KEY);
+      if (legado) {
+        depositoSelecionado = legado;
+        localStorage.setItem(depositoStorageKey, JSON.stringify(legado));
+      }
+      localStorage.removeItem(LEGACY_DEPOSITO_KEY);
+    }
+
+    // Se existir estoque padrão, ignora cache salvo diferente do padrão
+    if (estoquePadraoUsuario) {
+      const isMesmoDeposito = depositoSelecionado && String(depositoSelecionado.id) === String(estoquePadraoUsuario);
+      if (!isMesmoDeposito) {
+        depositoSelecionado = null;
+        localStorage.removeItem(depositoStorageKey);
+      }
+    }
 
     // ========================
     // ======= CLIENTES =======
@@ -321,7 +361,7 @@ echo "<script>window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";<
 
       const nome = selecionado.parentElement.querySelector("span").textContent.trim();
       depositoSelecionado = { id: selecionado.value, nome };
-      localStorage.setItem("depositoSelecionado", JSON.stringify(depositoSelecionado));
+      localStorage.setItem(depositoStorageKey, JSON.stringify(depositoSelecionado));
 
       // Atualiza o botão principal
       const label = document.getElementById("estoqueSelecionadoLabel");
@@ -371,7 +411,7 @@ echo "<script>window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";<
         const dep = lista.find(d => String(d.id) === String(estoquePadraoUsuario));
         if (dep) {
           depositoSelecionado = { id: String(dep.id), nome: dep.descricao };
-          localStorage.setItem("depositoSelecionado", JSON.stringify(depositoSelecionado));
+          localStorage.setItem(depositoStorageKey, JSON.stringify(depositoSelecionado));
           atualizarBotaoEstoque();
           await consultarEstoqueCarrinho();
           console.log("✅ Estoque padrão aplicado:", dep.descricao);
