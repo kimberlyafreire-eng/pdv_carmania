@@ -212,7 +212,10 @@ background:white;box-shadow:0 0 10px rgba(0,0,0,0.15);border-radius:14px;'>
 </table></div><hr><p style='font-weight:bold;margin-bottom:6px;'>Formas de Pagamento</p>
 <table style='width:100%;font-size:15px;text-align:left;margin-bottom:10px'>";
 foreach ($pagamentos as $p) {
-    $reciboHtml .= "<tr><td>{$p['nome']}</td><td style='text-align:right'>R$ ".number_format($p['valor'],2,',','.')."</td></tr>";
+    $nomeForma = isset($p['nome']) && $p['nome'] !== '' ? $p['nome'] : ($p['forma'] ?? '');
+    if ($nomeForma === '') continue;
+    $reciboHtml .= "<tr><td>" . htmlspecialchars($nomeForma, ENT_QUOTES, 'UTF-8') . "</td><td style='text-align:right'>R$ "
+        . number_format($p['valor'],2,',','.') . "</td></tr>";
 }
 $reciboHtml .= "</table><hr>
 <table style='width:100%;font-size:13px;text-align:left;color:#555;'>
