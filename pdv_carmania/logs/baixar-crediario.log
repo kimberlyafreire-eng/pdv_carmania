@@ -1,0 +1,89 @@
+[2025-10-06 17:28:21] REQ GET https://bling.com.br/Api/v3/categorias?pagina=1&limite=100 -> HTTP 404
+[2025-10-06 17:28:21] Resp: {
+    "error": {
+        "type": "RESOURCE_NOT_FOUND",
+        "message": "N\u00e3o encontrado.",
+        "description": "O recurso requisitado n\u00e3o foi encontrado. Verifique se o endpoint solicitado est\u00e1 correto ou se o ID informado realmente existe no sistema."
+    }
+}
+[2025-10-06 17:28:21] Erro: [2] Undefined array key "forma"
+[2025-10-06 17:28:21] Erro: [8192] trim(): Passing null to parameter #1 ($string) of type string is deprecated
+[2025-10-06 17:28:21] Erro: [2] Undefined array key "forma"
+[2025-10-06 17:28:21] ⚠ Categoria não encontrada para forma ''
+[2025-10-06 17:28:21] Erro: [2] Undefined array key "forma"
+[2025-10-06 17:28:22] REQ POST https://bling.com.br/Api/v3/contas/receber/23985446623/baixar -> HTTP 200
+[2025-10-06 17:28:22] Payload: {"data":"2025-10-06","usarDataVencimento":false,"categoria":{"id":null},"historico":"Baixa via PDV Carmania - ","valorRecebido":30}
+[2025-10-06 17:28:22] Resp: {"data":{"bordero":{"id":24007130782}}}
+[2025-10-06 17:28:22] ✅ Baixa título 23985446623 valor=30
+[2025-10-06 17:28:22] Erro: [2] Undefined array key "forma"
+[2025-10-06 17:28:22] Erro: [8192] trim(): Passing null to parameter #1 ($string) of type string is deprecated
+[2025-10-06 17:28:22] Erro: [2] Undefined array key "forma"
+[2025-10-06 17:28:22] ⚠ Categoria não encontrada para forma ''
+[2025-10-06 17:28:22] Erro: [2] Undefined array key "forma"
+[2025-10-06 17:28:23] REQ POST https://bling.com.br/Api/v3/contas/receber/23985446623/baixar -> HTTP 200
+[2025-10-06 17:28:23] Payload: {"data":"2025-10-06","usarDataVencimento":false,"categoria":{"id":null},"historico":"Baixa via PDV Carmania - ","valorRecebido":10.9000000000000003552713678800500929355621337890625}
+[2025-10-06 17:28:23] Resp: {"data":{"bordero":{"id":24007130884}}}
+[2025-10-06 17:28:23] ✅ Baixa título 23985446623 valor=10.9
+[2025-10-07 08:41:23] ⚠ Conta 'CREDIÁRIO' não encontrada
+[2025-10-07 08:41:23] ⚠ Categoria não encontrada para 'Pix'
+[2025-10-07 08:41:23] ✅ Baixa título 24011434561 valor=425.7 forma=Pix catId=
+[2025-10-07 09:14:46] ✅ Baixa título 24011434561 valor=425.7 forma=Pix catId=14717323386 contaId=14892600169
+[2025-10-07 09:17:08] ✅ Baixa título 24011434561 valor=300 forma=Pix catId=14717323386 contaId=14892600169
+[2025-10-07 09:17:08] ⚠ Categoria RD não encontrada para 'Crédito'
+[2025-10-07 09:17:09] ✅ Baixa título 24011434561 valor=125.7 forma=Crédito catId= contaId=14892600169
+[2025-10-07 10:04:08] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 10:04:09] ✅ Baixa título 24011434561 valor=100 forma=Pix catId= contaId=14892600169
+[2025-10-07 10:04:09] ⚠ Categoria RD não encontrada para 'Crédito'
+[2025-10-07 10:04:10] ✅ Baixa título 24011434561 valor=100 forma=Crédito catId= contaId=14892600169
+[2025-10-07 10:20:49] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 10:20:50] ✅ Baixa título 24011434561 valor=170.28 forma=Pix catId= contaId=14892600169
+[2025-10-07 10:20:50] ⚠ Categoria RD não encontrada para 'Crédito'
+[2025-10-07 10:20:50] ✅ Baixa título 24011434561 valor=255.42 forma=Crédito catId= contaId=14892600169
+[2025-10-07 10:20:50] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 10:20:51] ✅ Baixa título 24012791508 valor=29.72 forma=Pix catId= contaId=14892600169
+[2025-10-07 10:20:51] ⚠ Categoria RD não encontrada para 'Crédito'
+[2025-10-07 10:20:51] ✅ Baixa título 24012791508 valor=44.58 forma=Crédito catId= contaId=14892600169
+[2025-10-07 10:33:38] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 10:33:39] ✅ Baixa título 24012791508 valor=321.6 forma=Pix catId= contaId=14892600169
+[2025-10-07 11:00:36] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 11:00:37] ✅ Baixa título 24011434561 valor=300 forma=Pix catId= contaId=14892600169
+[2025-10-07 11:37:34] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 11:37:34] ✅ Baixa título 24011434561 valor=300 forma=Pix catId= contaId=14892600169
+[2025-10-07 11:37:34] Título 24011434561: restante após baixa R$ 125.7
+[2025-10-07 11:37:34] 💰 Saldo anterior: R$ 821.6 | Pago: R$ 300 | Saldo atual: R$ 521.6
+[2025-10-07 11:39:57] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 11:39:58] ✅ Baixa título 24011434561 valor=300 forma=Pix catId= contaId=14892600169
+[2025-10-07 11:39:58] Título 24011434561: restante após baixa R$ 125.7
+[2025-10-07 11:39:58] 💰 Saldo anterior: R$ 821.6 | Pago: R$ 300 | Saldo atual: R$ 521.6
+[2025-10-07 15:24:17] ⚠ Categoria RD não encontrada para 'Débito'
+[2025-10-07 15:24:18] ✅ Baixa título 24011434561 valor=171.42105263158 forma=Débito catId= contaId=14892600169
+[2025-10-07 15:24:18] ⚠ Categoria RD não encontrada para 'Crédito'
+[2025-10-07 15:24:18] ✅ Baixa título 24011434561 valor=42.855263157895 forma=Crédito catId= contaId=14892600169
+[2025-10-07 15:24:18] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 15:24:19] ✅ Baixa título 24011434561 valor=25.713157894737 forma=Pix catId= contaId=14892600169
+[2025-10-07 15:24:19] ⚠ Categoria RD não encontrada para 'Dinheiro'
+[2025-10-07 15:24:19] ✅ Baixa título 24011434561 valor=85.710526315789 forma=Dinheiro catId= contaId=14892600169
+[2025-10-07 15:24:19] Título 24011434561: restante após baixa R$ 0
+[2025-10-07 15:24:19] ⚠ Categoria RD não encontrada para 'Débito'
+[2025-10-07 15:24:20] ✅ Baixa título 24012791508 valor=28.578947368421 forma=Débito catId= contaId=14892600169
+[2025-10-07 15:24:20] ⚠ Categoria RD não encontrada para 'Crédito'
+[2025-10-07 15:24:21] ✅ Baixa título 24012791508 valor=7.1447368421053 forma=Crédito catId= contaId=14892600169
+[2025-10-07 15:24:21] ⚠ Categoria RD não encontrada para 'Pix'
+[2025-10-07 15:24:21] ✅ Baixa título 24012791508 valor=4.2868421052632 forma=Pix catId= contaId=14892600169
+[2025-10-07 15:24:21] ⚠ Categoria RD não encontrada para 'Dinheiro'
+[2025-10-07 15:24:22] ✅ Baixa título 24012791508 valor=14.289473684211 forma=Dinheiro catId= contaId=14892600169
+[2025-10-07 15:24:22] Título 24012791508: restante após baixa R$ 341.6
+[2025-10-07 15:24:22] 💰 Saldo anterior: R$ 721.6 | Pago: R$ 380 | Saldo atual: R$ 341.6
+[2025-10-07 15:52:49] ⚠ Conta financeira 'CREDIARIO' não encontrada
+[2025-10-07 15:52:50] ✅ Baixa título 24011434561 valor=200 forma=Pix catId= contaId=
+[2025-10-07 15:52:51] ✅ Baixa título 24011434561 valor=100 forma=Crédito catId= contaId=
+[2025-10-07 15:52:51] ✅ Baixa título 24011434561 valor=50 forma=Débito catId= contaId=
+[2025-10-07 15:52:52] ✅ Baixa título 24011434561 valor=75.7 forma=Dinheiro catId= contaId=
+[2025-10-07 15:52:52] ✅ Baixa título 24012791508 valor=24.3 forma=Dinheiro catId= contaId=
+[2025-10-07 15:59:23] ⚠ Conta financeira 'CREDIÁRIO' não encontrada entre: CAIXA, BLING CONTA, ITAU, CREDIÁRIO
+[2025-10-07 15:59:24] ✅ Baixa título 24012791508 valor=50 forma=Débito catId= contaId=
+[2025-10-07 16:02:01] ✅ Baixa título 24012791508 valor=20 forma=Pix catId= contaId=14892600169
+[2025-10-07 19:50:33] ✅ Baixa título 24012791508 valor=50 forma=Pix catId= contaId=14892600169
+[2025-10-07 19:50:33] ✅ Baixa título 24012791508 valor=50 forma=Débito catId= contaId=14892600169
+[2025-10-07 19:50:34] ✅ Baixa título 24012791508 valor=50 forma=Crédito catId= contaId=14892600169
+[2025-10-10 04:17:18] ✅ Baixa título 24012791508 valor=20 forma=Pix catId= contaId=14892600169

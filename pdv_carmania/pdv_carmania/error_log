@@ -1,0 +1,2 @@
+[25-Aug-2025 09:30:22 America/Fortaleza] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home1/evand222/public_html/pdv_carmania/login.php:8) in /home1/evand222/public_html/pdv_carmania/login.php on line 30
+[25-Aug-2025 09:32:40 America/Fortaleza] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home1/evand222/public_html/pdv_carmania/login.php:8) in /home1/evand222/public_html/pdv_carmania/login.php on line 30

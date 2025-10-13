@@ -1,0 +1,250 @@
+[2025-10-03 16:59:46] Erro consulta CR cliente 17682580480: HTTP 401 - {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided has expired"}}
+[2025-10-03 17:29:43] REQ GET https://bling.com.br/Api/v3/contas/receber?contatoId=17682580480&limit=100&offset=0 -> 200
+[2025-10-03 17:29:43] RESP: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795","dataEmissao":"2025-08-01","valor":11.9,"situacao":3,"url":"https:\/\/bling.com.br\/doc.view.php?id=b71eb8ee88de09f75a38036a47b60586"}},{"id":23486476090,"situacao":2,"vencimento":"2025-08-01","valor":105,"idTransacao":"","linkQRCodePix":"https:\/\/bling.com.br\/doc.view.php?id=01b3b83c6bbc8003a893efd005a4279f","linkBoleto":"","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697682,"codigoFiscal":17},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23486475490,"tipoOrigem":"notafiscal","numero":"000796","dataEmissao":"2025-08-01","valor":105,"situacao":3,"url":"https:\/\/bling.com.br\/doc.view.php?id=9a0d6051ed5ef044dfdca7851aaf0eaa"}},{"id":23488441754,"situacao":2,"vencimento":"2025-08-11","valor":710,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=a03f178712089a609a7097d688551778","dataEmissao":"2025-08-01","contato":{"id":17565479111,"nome":"AUTO POSTO N.O. LTDA","numeroDocumento":"07014538000102","tipo":"J"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23488434270,"tipoOrigem":"notafiscal","numero":"000798","dataEmissao":"2025-08-01","valor":710,"situacao":7,"url":"https:\/\/bling.com.br\/doc.view.php?id=767f0d59627db5f71e3c60279d61423d"}},{"id":23509275751,"situacao":2,"vencimento":"2025-08-24","valor":240,"idTransacao":"","linkQRCo...[cut]
+[2025-10-04 08:37:59] GET https://bling.com.br/Api/v3/contas/receber -> HTTP 200
+[2025-10-04 08:37:59] Response: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-04 08:38:38] GET https://bling.com.br/Api/v3/contas/receber -> HTTP 200
+[2025-10-04 08:38:38] Response: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-04 08:38:40] GET https://bling.com.br/Api/v3/contas/receber -> HTTP 200
+[2025-10-04 08:38:40] Response: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-04 08:51:13] Iniciando cálculo de saldo para clienteId=17682580480
+[2025-10-04 08:51:14] Request GET https://bling.com.br/Api/v3/contas/receber -> HTTP 200
+[2025-10-04 08:51:14] Response: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-04 08:51:14] Total de títulos retornados: 100
+[2025-10-04 08:51:14] Saldo total calculado para clienteId=17682580480 -> R$ 0
+[2025-10-04 08:51:21] Iniciando cálculo de saldo para clienteId=17682580480
+[2025-10-04 08:51:22] Request GET https://bling.com.br/Api/v3/contas/receber -> HTTP 200
+[2025-10-04 08:51:22] Response: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-04 08:51:22] Total de títulos retornados: 100
+[2025-10-04 08:51:22] Saldo total calculado para clienteId=17682580480 -> R$ 0
+[2025-10-06 14:31:24] Iniciando cálculo de saldo para clienteId=17682580480
+[2025-10-06 14:31:26] Request GET https://bling.com.br/Api/v3/contas/receber -> HTTP 200
+[2025-10-06 14:31:26] Response: {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-06 14:31:26] Total de títulos retornados: 100
+[2025-10-06 14:31:26] Saldo total calculado para clienteId=17682580480 -> R$ 0
+[2025-10-06 14:46:39] Início saldo para clienteId=17682580480
+[2025-10-06 14:46:40] Request GET https://bling.com.br/Api/v3/contas/receber?pagina=1&limite=100 -> HTTP 200
+[2025-10-06 14:46:40] Resp (primeiros 500): {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-06 14:46:40] pagina=1 (pagina/limite): retornou 100 títulos
+[2025-10-06 14:46:41] Request GET https://bling.com.br/Api/v3/contas/receber?pagina=2&limite=100 -> HTTP 200
+[2025-10-06 14:46:41] Resp (primeiros 500): {"data":[{"id":23918772446,"situacao":1,"vencimento":"2025-10-25","valor":89.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"","dataEmissao":"2025-09-25","contato":{"id":17672029652,"nome":"JOAO VITOR DA SILVEIRA NUNES","numeroDocumento":"11699519617","tipo":"F"},"formaPagamento":{"id":2009803,"codigoFiscal":15},"contaContabil":{"id":14886755683,"descricao":"Caixa"},"origem":{"id":23917567225,"tipoOrigem":"venda","numero":"158","dataEmissao":"2025-09-25","valor":89.9,"situacao":1,"url":""}},
+[2025-10-06 14:46:41] pagina=2 (pagina/limite): retornou 36 títulos
+[2025-10-06 14:46:41] Total agregado de títulos: 136
+[2025-10-06 14:46:41] Saldo final clienteId=17682580480 -> R$ 90.9 / titulos=1
+[2025-10-06 14:47:15] Início saldo para clienteId=17682580480
+[2025-10-06 14:47:16] Request GET https://bling.com.br/Api/v3/contas/receber?pagina=1&limite=100 -> HTTP 200
+[2025-10-06 14:47:16] Resp (primeiros 500): {"data":[{"id":23485555204,"situacao":5,"vencimento":"2025-08-02","valor":11.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"https:\/\/bling.com.br\/doc.view.php?id=fecef6ab6810d1d1ac285cd6cd137cb4","dataEmissao":"2025-08-01","contato":{"id":17534523288,"nome":"EVANDRO","numeroDocumento":"40685477851","tipo":"F"},"formaPagamento":{"id":7697681,"codigoFiscal":15},"contaContabil":{"id":14892287583,"descricao":"Bling Conta"},"origem":{"id":23485551858,"tipoOrigem":"notafiscal","numero":"000795"
+[2025-10-06 14:47:16] pagina=1 (pagina/limite): retornou 100 títulos
+[2025-10-06 14:47:17] Request GET https://bling.com.br/Api/v3/contas/receber?pagina=2&limite=100 -> HTTP 200
+[2025-10-06 14:47:17] Resp (primeiros 500): {"data":[{"id":23918772446,"situacao":1,"vencimento":"2025-10-25","valor":89.9,"idTransacao":"","linkQRCodePix":"","linkBoleto":"","dataEmissao":"2025-09-25","contato":{"id":17672029652,"nome":"JOAO VITOR DA SILVEIRA NUNES","numeroDocumento":"11699519617","tipo":"F"},"formaPagamento":{"id":2009803,"codigoFiscal":15},"contaContabil":{"id":14886755683,"descricao":"Caixa"},"origem":{"id":23917567225,"tipoOrigem":"venda","numero":"158","dataEmissao":"2025-09-25","valor":89.9,"situacao":1,"url":""}},
+[2025-10-06 14:47:17] pagina=2 (pagina/limite): retornou 36 títulos
+[2025-10-06 14:47:17] Total agregado de títulos: 136
+[2025-10-06 14:47:17] Request GET https://bling.com.br/Api/v3/contas/receber/23985446623/baixas -> HTTP 404
+[2025-10-06 14:47:17] Resp (primeiros 500): {
+    "error": {
+        "type": "RESOURCE_NOT_FOUND",
+        "message": "N\u00e3o encontrado.",
+        "description": "O recurso requisitado n\u00e3o foi encontrado. Verifique se o endpoint solicitado est\u00e1 correto ou se o ID informado realmente existe no sistema."
+    }
+}
+[2025-10-06 14:47:17] Falha ao obter baixas do título 23985446623 (HTTP 404). Mantendo restante = total.
+[2025-10-06 14:47:17] Saldo final clienteId=17682580480 -> R$ 90.9 / titulos=1
+[2025-10-06 14:59:13] Início saldo para clienteId=17682580480
+[2025-10-06 14:59:14] GET https://bling.com.br/Api/v3/contas/receber?pagina=1&limite=100 -> HTTP 200
+[2025-10-06 14:59:14] Página 1 retornou 100 títulos
+[2025-10-06 14:59:15] GET https://bling.com.br/Api/v3/contas/receber?pagina=2&limite=100 -> HTTP 200
+[2025-10-06 14:59:15] Página 2 retornou 36 títulos
+[2025-10-06 14:59:15] Total de títulos carregados: 136
+[2025-10-06 14:59:15] Título 23985446623 → valor=90.9 restante=90.9
+[2025-10-06 14:59:15] Saldo final clienteId=17682580480 -> R$ 90.9 / títulos=1
+[2025-10-06 14:59:47] Início saldo para clienteId=17682580480
+[2025-10-06 14:59:48] GET https://bling.com.br/Api/v3/contas/receber?pagina=1&limite=100 -> HTTP 200
+[2025-10-06 14:59:48] Página 1 retornou 100 títulos
+[2025-10-06 14:59:48] GET https://bling.com.br/Api/v3/contas/receber?pagina=2&limite=100 -> HTTP 200
+[2025-10-06 14:59:48] Página 2 retornou 36 títulos
+[2025-10-06 14:59:48] Total de títulos carregados: 136
+[2025-10-06 14:59:48] Título 23985446623 → valor=90.9 restante=90.9
+[2025-10-06 14:59:48] Saldo final clienteId=17682580480 -> R$ 90.9 / títulos=1
+[2025-10-06 15:35:55] Iniciando saldo.php para clienteId=17682580480
+[2025-10-06 15:35:57] Saldo final clienteId=17682580480 -> R$ 40,90 / titulos=1
+[2025-10-06 16:39:45] Iniciando saldo.php para clienteId=17682580480
+[2025-10-06 16:39:48] Saldo final clienteId=17682580480 -> R$ 40,90 / titulos=1
+[2025-10-06 16:44:58] Iniciando saldo.php para clienteId=17682580480
+[2025-10-06 16:45:00] Saldo final clienteId=17682580480 -> R$ 40,90 / titulos=1
+[2025-10-06 17:25:42] Iniciando saldo.php para clienteId=17682580480
+[2025-10-06 17:25:44] Saldo final clienteId=17682580480 -> R$ 40,90 / titulos=1
+[2025-10-07 08:39:21] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 08:39:23] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 08:40:32] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 08:40:34] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 08:41:16] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 08:41:18] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 09:14:36] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 09:14:39] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 09:16:57] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 09:17:00] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 10:02:51] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 10:02:53] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 10:03:54] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 10:03:57] Saldo final clienteId=17682580480 -> R$ 425,70 / titulos=1
+[2025-10-07 10:05:48] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 10:05:51] Saldo final clienteId=17682580480 -> R$ 225,70 / titulos=1
+[2025-10-07 10:20:16] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 10:20:18] Saldo final clienteId=17682580480 -> R$ 821,60 / titulos=2
+[2025-10-07 10:33:11] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 10:33:14] Saldo final clienteId=17682580480 -> R$ 321,60 / titulos=1
+[2025-10-07 11:00:03] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:00:06] Saldo final clienteId=17682580480 -> R$ 821,60 / titulos=2
+[2025-10-07 11:01:38] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:01:40] Saldo final clienteId=17682580480 -> R$ 521,60 / titulos=2
+[2025-10-07 11:21:46] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:21:49] Saldo final clienteId=17682580480 -> R$ 521,60 / titulos=2
+[2025-10-07 11:37:20] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:37:22] Saldo final clienteId=17682580480 -> R$ 821,60 / titulos=2
+[2025-10-07 11:39:43] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:39:46] Saldo final clienteId=17682580480 -> R$ 821,60 / titulos=2
+[2025-10-07 11:40:40] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:40:43] Saldo final clienteId=17682580480 -> R$ 521,60 / titulos=2
+[2025-10-07 11:43:06] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:43:06] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 11:43:06] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 11:43:16] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:43:16] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 11:43:16] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 11:43:25] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:43:25] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 11:43:25] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 11:43:37] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:43:38] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 11:43:38] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 11:43:46] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:43:47] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 11:43:47] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 11:43:53] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 11:43:53] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 11:43:53] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 12:01:57] Iniciando saldo.php para clienteId=17682580480
+[2025-10-07 12:01:57] Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 12:01:57] Saldo final clienteId=17682580480 -> R$ 0,00 / titulos=0
+[2025-10-07 14:24:37] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:24:37] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:24:37] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:24:39] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:24:39] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:24:39] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:24:40] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:24:40] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:24:40] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:24:57] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:24:57] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:24:57] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:25:19] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:25:19] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:25:19] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:25] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:25] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:25] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:40] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:40] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:40] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:41] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:41] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:41] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:42] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:42] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:42] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:48] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:48] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:48] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:50] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:50] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:50] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:51] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:51] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:51] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:54] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:54] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:54] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:55] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:55] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:55] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:32:56] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:32:57] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:32:57] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 14:33:10] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 14:33:10] ❌ Erro HTTP 401 ao buscar página 1 -> {"error":{"type":"invalid_token","message":"invalid_token","description":"The access token provided is invalid"}}
+[2025-10-07 14:33:10] ✅ Saldo final clienteId=17682580480 -> R$ 0,00 | títulos=0
+[2025-10-07 15:22:22] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:22:25] → Título 24011434561 (sit=1) restante=R$425,70
+[2025-10-07 15:22:25] → Título 24012791508 (sit=1) restante=R$395,90
+[2025-10-07 15:22:25] ✅ Saldo final clienteId=17682580480 -> R$ 821,60 | títulos=2
+[2025-10-07 15:23:45] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:23:48] → Título 24011434561 (sit=3) restante=R$325,70
+[2025-10-07 15:23:48] → Título 24012791508 (sit=1) restante=R$395,90
+[2025-10-07 15:23:48] ✅ Saldo final clienteId=17682580480 -> R$ 721,60 | títulos=2
+[2025-10-07 15:51:45] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:51:48] → Título 24012791508 (sit=3) restante=R$341,60
+[2025-10-07 15:51:48] ✅ Saldo final clienteId=17682580480 -> R$ 341,60 | títulos=1
+[2025-10-07 15:52:26] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:52:26] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:52:28] → Título 24011434561 (sit=1) restante=R$425,70
+[2025-10-07 15:52:28] → Título 24011434561 (sit=1) restante=R$425,70
+[2025-10-07 15:52:28] → Título 24012791508 (sit=1) restante=R$395,90
+[2025-10-07 15:52:28] ⚠ Falha ao obter detalhes do título 24012791508: HTTP 429
+[2025-10-07 15:52:28] → Título 24012791508 (sit=1) restante=R$395,90
+[2025-10-07 15:52:28] ✅ Saldo final clienteId=17682580480 -> R$ 821,60 | títulos=2
+[2025-10-07 15:52:28] ✅ Saldo final clienteId=17682580480 -> R$ 821,60 | títulos=2
+[2025-10-07 15:58:33] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:58:36] → Título 24012791508 (sit=3) restante=R$371,60
+[2025-10-07 15:58:36] ✅ Saldo final clienteId=17682580480 -> R$ 371,60 | títulos=1
+[2025-10-07 15:59:03] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 15:59:05] → Título 24012791508 (sit=3) restante=R$371,60
+[2025-10-07 15:59:05] ✅ Saldo final clienteId=17682580480 -> R$ 371,60 | títulos=1
+[2025-10-07 16:01:52] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 16:01:54] → Título 24012791508 (sit=3) restante=R$321,60
+[2025-10-07 16:01:54] ✅ Saldo final clienteId=17682580480 -> R$ 321,60 | títulos=1
+[2025-10-07 16:05:48] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 16:05:50] → Título 24012791508 (sit=3) restante=R$301,60
+[2025-10-07 16:05:50] ✅ Saldo final clienteId=17682580480 -> R$ 301,60 | títulos=1
+[2025-10-07 19:49:42] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 19:49:45] → Título 24012791508 (sit=3) restante=R$301,60
+[2025-10-07 19:49:45] ✅ Saldo final clienteId=17682580480 -> R$ 301,60 | títulos=1
+[2025-10-07 19:49:51] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 19:49:53] → Título 24012791508 (sit=3) restante=R$301,60
+[2025-10-07 19:49:53] ✅ Saldo final clienteId=17682580480 -> R$ 301,60 | títulos=1
+[2025-10-07 19:50:52] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 19:50:55] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-07 19:50:55] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-07 20:28:59] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-07 20:29:01] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-07 20:29:01] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-09 15:04:28] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-09 15:04:30] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-09 15:04:30] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-09 15:47:36] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-09 15:47:38] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-09 15:47:38] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-09 16:10:54] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-09 16:10:56] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-09 16:10:56] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-09 16:23:06] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-09 16:23:10] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-09 16:23:10] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-09 16:23:29] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-09 16:23:32] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-09 16:23:32] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-10 04:14:07] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-10 04:14:10] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-10 04:14:10] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-10 04:17:07] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-10 04:17:09] → Título 24012791508 (sit=3) restante=R$151,60
+[2025-10-10 04:17:09] ✅ Saldo final clienteId=17682580480 -> R$ 151,60 | títulos=1
+[2025-10-10 05:20:41] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-10 05:20:43] → Título 24012791508 (sit=3) restante=R$131,60
+[2025-10-10 05:20:43] ✅ Saldo final clienteId=17682580480 -> R$ 131,60 | títulos=1
+[2025-10-10 08:12:10] 🧮 Iniciando cálculo de saldo crediário para clienteId=17682580480
+[2025-10-10 08:12:13] → Título 24012791508 (sit=3) restante=R$131,60
+[2025-10-10 08:12:13] → Título 24040476182 (sit=1) restante=R$35,00
+[2025-10-10 08:12:14] → Título 24040488383 (sit=1) restante=R$35,00
+[2025-10-10 08:12:14] → Título 24041053303 (sit=1) restante=R$35,00
+[2025-10-10 08:12:14] ✅ Saldo final clienteId=17682580480 -> R$ 236,60 | títulos=4

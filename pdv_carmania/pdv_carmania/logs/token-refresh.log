@@ -1,0 +1,2 @@
+[2025-10-07 19:07:17] ❌ Falha ao renovar token: HTTP 400 - {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-07 19:17:14] ✅ Token renovado com sucesso. Novo access_token salvo.

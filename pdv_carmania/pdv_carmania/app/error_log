@@ -1,0 +1,36 @@
+[25-Aug-2025 15:19:54 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:20:18 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:20:22 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:20:48 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:21:22 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:34:41 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:35:18 America/Fortaleza] PHP Fatal error:  Uncaught Exception: Unable to open database: unable to open database file in /home1/evand222/public_html/pdv_carmania/app/login.php:22
+Stack trace:
+#0 /home1/evand222/public_html/pdv_carmania/app/login.php(22): SQLite3->__construct('/home1/evand222...')
+#1 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/app/login.php on line 22
+[25-Aug-2025 15:44:30 America/Fortaleza] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home1/evand222/public_html/pdv_carmania/app/login.php:8) in /home1/evand222/public_html/pdv_carmania/app/login.php on line 30

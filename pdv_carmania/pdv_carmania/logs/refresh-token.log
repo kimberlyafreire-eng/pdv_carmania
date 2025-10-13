@@ -1,0 +1,50 @@
+[2025-10-07 19:49:33] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 19:49:42] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 19:49:51] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 19:50:32] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 19:50:52] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 20:26:49] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 20:28:59] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-07 20:29:36] ✅ Token ainda válido, sem necessidade de renovação.
+[2025-10-08 08:53:18] ❌ Falha ao renovar token (HTTP 400) - {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 08:53:41] ❌ Falha ao renovar token (HTTP 400) - {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 09:12:49] ❌ Falha ao renovar token (HTTP 400) - {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 09:33:24] ❌ Falha ao renovar token (HTTP 400) - {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 09:39:14] ✅ Token renovado com sucesso. Novo access_token salvo.
+[2025-10-08 09:42:28] ⏳ Token ainda válido por 356.76666666667 min
+[2025-10-08 09:43:47] ⏳ Token ainda válido por 355.45 min
+[2025-10-08 09:43:55] ⏳ Token ainda válido por 355.31666666667 min
+[2025-10-08 09:47:29] ⏳ Token ainda válido por 351.75 min
+[2025-10-08 11:18:53] ⏳ Token ainda válido por 260.35 min
+[2025-10-08 11:19:44] ⏳ Token ainda válido por 259.5 min
+[2025-10-08 11:23:27] ⏳ Token ainda válido por 255.78333333333 min
+[2025-10-08 11:23:37] ⏳ Token ainda válido por 255.61666666667 min
+[2025-10-08 11:26:15] ⏳ Token ainda válido por 252.98333333333 min
+[2025-10-08 11:35:31] ⏳ Token ainda válido por 243.71666666667 min
+[2025-10-08 15:39:37] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:28] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:29] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:29] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:30] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:30] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:31] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:31] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:32] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:32] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:33] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:33] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:34] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 15:48:34] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 16:01:49] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 16:01:49] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 16:19:02] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 16:21:02] ❌ Falha ao renovar token (HTTP 400): {"error":{"type":"invalid_client","message":"invalid_client","description":"Client credentials were not found in the headers"}}
+[2025-10-08 16:32:05] ❌ Token inexistente.
+[2025-10-08 16:48:30] 🔄 Iniciando tentativa de renovação manual...
+[2025-10-08 16:48:30] ❌ Não há token.json para renovar.
+[2025-10-08 16:48:30] ❌ Falha ao renovar token (função retornou falso)
+[2025-10-08 16:50:51] 🔄 Iniciando tentativa de renovação manual...
+[2025-10-08 16:50:51] 🔄 Tentando renovar token (HTTP 200)
+[2025-10-08 16:50:51] Resposta: {"access_token":"4f2186e04f6975d99c76f36069e18ccfff8a8911","expires_in":21600,"token_type":"Bearer","scope":"98308 98309 98310 98313 98314 98619 101584 104142 104163 107041 393720 507943 575904 1563512 5990556 6631498 106168710 182224097 199272829 200802821 220621674 318257547 318257548 318257550 318257553 318257554 318257555 318257556 318257559 318257561 318257562 318257563 318257564 318257565 318257568 318257570 318257573 318257576 318257577 318257578 318257580 318257581 318257583 333936575 363921589 363921590 363921591 363921592 363921593 363921594 363921598 363921599 363953167 363953556 363953706 380039494 791588404 875116881 875116883 875116884 875116885 1649295804 1780272711 1869535257 5862218180 6239411327 6239420709 8494143799 8494143812 8494143816 13645012976 13645012997 13645012998 13645013013 13645013025 13645013026 13645013059 13645013060 13645013062 13645013063","refresh_token":"a29eb86e6cfca11256686be1d47c1de259bbc3c2"}
+[2025-10-08 16:50:51] ✅ Token atualizado com sucesso em token.json
+[2025-10-08 16:50:51] ✅ Token renovado com sucesso! Expira em: 08/10/2025 22:50:51

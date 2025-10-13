@@ -1,0 +1,47 @@
+[06-Oct-2025 17:28:21 America/Fortaleza] PHP Warning:  Undefined array key "forma" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 162
+[06-Oct-2025 17:28:21 America/Fortaleza] PHP Warning:  Undefined array key "forma" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 175
+[06-Oct-2025 17:28:21 America/Fortaleza] PHP Warning:  Undefined array key "forma" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 181
+[06-Oct-2025 17:28:22 America/Fortaleza] PHP Warning:  Undefined array key "forma" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 162
+[06-Oct-2025 17:28:22 America/Fortaleza] PHP Warning:  Undefined array key "forma" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 175
+[06-Oct-2025 17:28:22 America/Fortaleza] PHP Warning:  Undefined array key "forma" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 181
+[07-Oct-2025 15:52:52 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 201
+[07-Oct-2025 15:52:52 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 201
+[07-Oct-2025 15:52:52 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 201
+[07-Oct-2025 15:52:52 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 201
+[07-Oct-2025 15:59:24 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 209
+[07-Oct-2025 16:02:01 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 202
+[07-Oct-2025 19:34:40 America/Fortaleza] PHP Fatal error:  Cannot redeclare logMsg() (previously declared in /home1/evand222/public_html/pdv_carmania/api/crediario/saldo.php:28) in /home1/evand222/public_html/pdv_carmania/api/refresh-token.php on line 21
+[07-Oct-2025 19:34:54 America/Fortaleza] PHP Fatal error:  Cannot redeclare logMsg() (previously declared in /home1/evand222/public_html/pdv_carmania/api/crediario/saldo.php:28) in /home1/evand222/public_html/pdv_carmania/api/refresh-token.php on line 21
+[07-Oct-2025 19:35:35 America/Fortaleza] PHP Fatal error:  Cannot redeclare logMsg() (previously declared in /home1/evand222/public_html/pdv_carmania/api/crediario/saldo.php:28) in /home1/evand222/public_html/pdv_carmania/api/refresh-token.php on line 21
+[07-Oct-2025 19:50:34 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 205
+[07-Oct-2025 19:50:34 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 205
+[07-Oct-2025 19:50:34 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 205
+[09-Oct-2025 15:03:49 America/Fortaleza] PHP Fatal error:  Cannot redeclare logMsg() (previously declared in /home1/evand222/public_html/pdv_carmania/api/crediario/saldo.php:19) in /home1/evand222/public_html/pdv_carmania/api/lib/token-helper.php on line 20
+[09-Oct-2025 15:03:51 America/Fortaleza] PHP Fatal error:  Cannot redeclare logMsg() (previously declared in /home1/evand222/public_html/pdv_carmania/api/crediario/saldo.php:19) in /home1/evand222/public_html/pdv_carmania/api/lib/token-helper.php on line 20
+[09-Oct-2025 15:03:51 America/Fortaleza] PHP Fatal error:  Cannot redeclare logMsg() (previously declared in /home1/evand222/public_html/pdv_carmania/api/crediario/saldo.php:19) in /home1/evand222/public_html/pdv_carmania/api/lib/token-helper.php on line 20
+[09-Oct-2025 15:04:47 America/Fortaleza] PHP Warning:  require_once(/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php): Failed to open stream: No such file or directory in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 15:04:47 America/Fortaleza] PHP Fatal error:  Uncaught Error: Failed opening required '/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php' (include_path='.:/opt/cpanel/ea-php83/root/usr/share/pear') in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php:5
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 15:05:46 America/Fortaleza] PHP Warning:  require_once(/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php): Failed to open stream: No such file or directory in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 15:05:46 America/Fortaleza] PHP Fatal error:  Uncaught Error: Failed opening required '/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php' (include_path='.:/opt/cpanel/ea-php83/root/usr/share/pear') in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php:5
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 16:11:27 America/Fortaleza] PHP Warning:  require_once(/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php): Failed to open stream: No such file or directory in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 16:11:27 America/Fortaleza] PHP Fatal error:  Uncaught Error: Failed opening required '/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php' (include_path='.:/opt/cpanel/ea-php83/root/usr/share/pear') in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php:5
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 16:11:29 America/Fortaleza] PHP Warning:  require_once(/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php): Failed to open stream: No such file or directory in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[09-Oct-2025 16:11:29 America/Fortaleza] PHP Fatal error:  Uncaught Error: Failed opening required '/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php' (include_path='.:/opt/cpanel/ea-php83/root/usr/share/pear') in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php:5
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[10-Oct-2025 04:14:23 America/Fortaleza] PHP Warning:  require_once(/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php): Failed to open stream: No such file or directory in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[10-Oct-2025 04:14:23 America/Fortaleza] PHP Fatal error:  Uncaught Error: Failed opening required '/home1/evand222/public_html/pdv_carmania/api/crediario/../token-helper.php' (include_path='.:/opt/cpanel/ea-php83/root/usr/share/pear') in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php:5
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 5
+[10-Oct-2025 04:17:18 America/Fortaleza] PHP Warning:  Undefined array key "nome" in /home1/evand222/public_html/pdv_carmania/api/crediario/baixar.php on line 198

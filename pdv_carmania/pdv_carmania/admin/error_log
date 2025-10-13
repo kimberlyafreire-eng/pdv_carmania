@@ -1,0 +1,10 @@
+[10-Oct-2025 09:27:19 America/Fortaleza] PHP Warning:  SQLite3::query(): Unable to prepare statement: no such column: nivel in /home1/evand222/public_html/pdv_carmania/admin/usuarios.php on line 57
+[10-Oct-2025 09:27:19 America/Fortaleza] PHP Fatal error:  Uncaught Error: Call to a member function fetchArray() on false in /home1/evand222/public_html/pdv_carmania/admin/usuarios.php:117
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/admin/usuarios.php on line 117
+[10-Oct-2025 09:36:30 America/Fortaleza] PHP Warning:  SQLite3::query(): Unable to prepare statement: no such column: nivel in /home1/evand222/public_html/pdv_carmania/admin/usuarios.php on line 57
+[10-Oct-2025 09:36:30 America/Fortaleza] PHP Fatal error:  Uncaught Error: Call to a member function fetchArray() on false in /home1/evand222/public_html/pdv_carmania/admin/usuarios.php:117
+Stack trace:
+#0 {main}
+  thrown in /home1/evand222/public_html/pdv_carmania/admin/usuarios.php on line 117

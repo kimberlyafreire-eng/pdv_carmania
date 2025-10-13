@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Teste Saldo Crediário</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f8f9fa; padding:20px; }
+    h2 { color:#dc3545; }
+    input { padding:8px; border:1px solid #ccc; border-radius:4px; }
+    button { padding:8px 15px; margin-left:10px; border:none; background:#dc3545; color:white; border-radius:4px; cursor:pointer; }
+    button:hover { background:#a71d2a; }
+    pre { background:#fff; border:1px solid #ccc; padding:15px; margin-top:20px; border-radius:4px; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Teste Saldo Crediário</h2>
+  <p>Digite o <b>ID do cliente</b> e clique em <b>Consultar</b> para verificar o saldo no crediário.</p>
+  
+  <input type="text" id="clienteId" placeholder="ID do cliente" style="width:300px">
+  <button onclick="consultar()">Consultar</button>
+
+  <pre id="resultado">Resultado aparecerá aqui...</pre>
+
+  <script>
+    async function consultar() {
+      const id = document.getElementById("clienteId").value.trim();
+      if (!id) return alert("Informe o ID do cliente");
+
+      document.getElementById("resultado").textContent = "Consultando...";
+
+      try {
+        // Caminho ajustado para onde o saldo.php realmente está
+        const res = await fetch("crediario/saldo.php", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ clienteId: id })
+        });
+        const data = await res.json();
+        document.getElementById("resultado").textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        document.getElementById("resultado").textContent = "❌ Erro: " + err;
+      }
+    }
+  </script>
+</body>
+</html>
