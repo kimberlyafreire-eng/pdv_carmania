@@ -4,6 +4,7 @@ if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
+$usuarioLogado = $_SESSION['usuario'] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -104,8 +105,12 @@ if (!isset($_SESSION['usuario'])) {
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
+    window.USUARIO_LOGADO = <?= json_encode($usuarioLogado) ?>;
+  </script>
+  <script>
     const fmt = (n) => "R$ " + (Number(n)||0).toFixed(2);
     const toNum = (v) => parseFloat((v ?? 0)) || 0;
+    const usuarioLogado = window.USUARIO_LOGADO || null;
 
     const cliente = JSON.parse(localStorage.getItem("clienteRecebimento") || "null");
     const saldoData = JSON.parse(localStorage.getItem("saldoCrediario") || "null");
@@ -180,7 +185,8 @@ if (!isset($_SESSION['usuario'])) {
         clienteId: cliente.id,
         clienteNome: cliente.nome,
         titulos: saldoData.titulos,
-        pagamentos: pagamentos
+        pagamentos: pagamentos,
+        usuarioLogado: usuarioLogado || null
       };
 
       try {

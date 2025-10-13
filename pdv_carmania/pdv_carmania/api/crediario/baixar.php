@@ -1,6 +1,9 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 
+session_start();
+$usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']) : '';
+
 // ✅ Inclui o helper do token centralizado
 require_once __DIR__ . '/../lib/token-helper.php';
 
@@ -18,10 +21,18 @@ $cacheContasFin = __DIR__ . '/contas-financeiras-cache.json';
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input) { http_response_code(400); die(json_encode(['erro'=>'JSON inválido'])); }
 
-$clienteId   = $input['clienteId'] ?? null;
-$clienteNome = $input['clienteNome'] ?? '';
-$titulos     = $input['titulos'] ?? [];
-$pagamentos  = $input['pagamentos'] ?? [];
+$clienteId      = $input['clienteId'] ?? null;
+$clienteNome    = $input['clienteNome'] ?? '';
+$titulos        = $input['titulos'] ?? [];
+$pagamentos     = $input['pagamentos'] ?? [];
+$usuarioPayload = isset($input['usuarioLogado']) ? trim((string)$input['usuarioLogado']) : '';
+$usuarioRecibo  = $usuarioPayload !== '' ? $usuarioPayload : $usuarioSessao;
+$usuarioRecibo  = trim($usuarioRecibo);
+if ($usuarioRecibo !== '') {
+    $usuarioRecibo = mb_substr($usuarioRecibo, 0, 80);
+} else {
+    $usuarioRecibo = null;
+}
 
 if (!$clienteId || empty($titulos) || empty($pagamentos)) {
     http_response_code(400);
@@ -181,11 +192,17 @@ foreach ($titulos as &$t) {
 $totalDepois = max(0, $totalAntes - $totalRecebido);
 
 // --- Gera Recibo
+$atendenteHtml = '';
+if ($usuarioRecibo) {
+    $atendenteHtml = "<p style='margin:0 0 6px;'>Atendente: <b>" . htmlspecialchars($usuarioRecibo, ENT_QUOTES, 'UTF-8') . "</b></p>";
+}
+
 $reciboHtml = "<div style='max-width:420px;width:90vw;height:calc(90vh - 80px);margin:0 auto;
 flex-direction:column;padding:20px;font-family:monospace;font-size:15px;text-align:center;
 background:white;box-shadow:0 0 10px rgba(0,0,0,0.15);border-radius:14px;'>
 <h4 style='margin:5px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
 <p style='margin:0 0 8px;font-weight:bold;'>Recibo de Pagamento Crediário</p>
+" . $atendenteHtml . "
 <p style='margin:0 0 10px;'>Cliente: <b>".htmlspecialchars($clienteNome)."</b></p>
 <div style='background:#f5f5f5;border-radius:10px;padding:12px 10px;margin:10px 0;'>
 <table style='width:100%;font-size:15px;text-align:left;'>

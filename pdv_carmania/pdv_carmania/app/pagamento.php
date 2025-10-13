@@ -229,6 +229,7 @@ if ($usuarioLogado) {
           carrinho,
           pagamentos,
           vendedorId: vendedorId || null,
+          usuarioLogado: usuarioLogado || null,
           deposito: depositoSelecionado // ⚠️ essencial para lançar estoque
         };
 
