@@ -123,3 +123,4 @@ if (file_put_contents($caminhoCache, $payload, LOCK_EX) === false) {
 
 echo $payload;
 ?>
+
