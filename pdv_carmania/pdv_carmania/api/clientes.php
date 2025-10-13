@@ -17,8 +17,9 @@ if(!$accessToken){
     exit();
 }
 
-$cacheExistente = file_exists($caminhoCache) ? file_get_contents($caminhoCache) : null;
 $caminhoCache = __DIR__ . '/../cache/clientes-cache.json';
+$cacheExistente = file_exists($caminhoCache) ? file_get_contents($caminhoCache) : null;
+
 
 $pagina = 1;
 $limite = 100;
@@ -107,3 +108,4 @@ if ($gravado === false) {
 
 echo $payload;
 ?>
+
