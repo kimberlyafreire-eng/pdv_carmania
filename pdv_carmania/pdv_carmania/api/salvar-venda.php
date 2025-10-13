@@ -40,6 +40,21 @@ $pagamentos      = $input['pagamentos'] ?? [];
 $descontoValor   = (float)($input['descontoValor'] ?? 0);
 $descontoPercent = (float)($input['descontoPercent'] ?? 0);
 $deposito        = $input['deposito'] ?? null; // 🧱 Depósito selecionado no carrinho
+$vendedorId      = $input['vendedorId'] ?? null;
+
+if (is_string($vendedorId)) {
+    $vendedorId = trim($vendedorId);
+}
+if ($vendedorId === '' || $vendedorId === null) {
+    $vendedorId = null;
+} else {
+    $vendedorId = (int)$vendedorId;
+    if ($vendedorId <= 0) {
+        $vendedorId = null;
+    }
+}
+
+logMsg('🧑‍💼 Vendedor associado: ' . ($vendedorId ?? 'nenhum'));
 
 if (empty($carrinho) || !$clienteId) {
     logMsg("Carrinho ou cliente ausente: " . json_encode($input));
@@ -148,6 +163,10 @@ $pedidoPayload = [
     'totalvenda'  => $totalFinal,
     'situacao'    => ['id' => 9] // ✅ "Atendido"
 ];
+
+if ($vendedorId) {
+    $pedidoPayload['vendedor'] = ['id' => $vendedorId];
+}
 
 // Adiciona desconto se houver
 if ($descontoAplicado > 0) {

@@ -14,8 +14,22 @@ $db->exec("CREATE TABLE IF NOT EXISTS usuarios (
     usuario TEXT UNIQUE NOT NULL,
     senha TEXT NOT NULL,
     nome TEXT,
-    estoque_padrao TEXT
+    estoque_padrao TEXT,
+    vendedor_id TEXT
 )");
+
+// 🔍 Garante coluna de vendedor para bases antigas
+$colunaVendedorExiste = false;
+$infoColunas = $db->query("PRAGMA table_info(usuarios)");
+while ($infoColunas && ($coluna = $infoColunas->fetchArray(SQLITE3_ASSOC))) {
+    if (($coluna['name'] ?? '') === 'vendedor_id') {
+        $colunaVendedorExiste = true;
+        break;
+    }
+}
+if (!$colunaVendedorExiste) {
+    $db->exec("ALTER TABLE usuarios ADD COLUMN vendedor_id TEXT");
+}
 
 // ⚙️ Ações de atualização
 $msg = '';
@@ -25,16 +39,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id'])) {
     $senha   = trim($_POST['senha'] ?? '');
     $nome    = trim($_POST['nome'] ?? '');
     $estoque = trim($_POST['estoque_padrao'] ?? '');
+    $vendedorId = trim($_POST['vendedor_id'] ?? '');
 
     if ($usuario && $senha) {
-        $stmt = $db->prepare("UPDATE usuarios 
-                              SET usuario = ?, senha = ?, nome = ?, estoque_padrao = ? 
+        $stmt = $db->prepare("UPDATE usuarios
+                              SET usuario = ?, senha = ?, nome = ?, estoque_padrao = ?, vendedor_id = ?
                               WHERE id = ?");
         $stmt->bindValue(1, $usuario, SQLITE3_TEXT);
         $stmt->bindValue(2, $senha, SQLITE3_TEXT);
         $stmt->bindValue(3, $nome, SQLITE3_TEXT);
         $stmt->bindValue(4, $estoque, SQLITE3_TEXT);
-        $stmt->bindValue(5, $id, SQLITE3_INTEGER);
+        if ($vendedorId === '') {
+            $stmt->bindValue(5, null, SQLITE3_NULL);
+        } else {
+            $stmt->bindValue(5, $vendedorId, SQLITE3_TEXT);
+        }
+        $stmt->bindValue(6, $id, SQLITE3_INTEGER);
         $stmt->execute();
 
         $msg = "<div class='alert alert-success'>✅ Usuário atualizado com sucesso!</div>";
@@ -94,6 +114,10 @@ $usuarios = $db->query("SELECT * FROM usuarios ORDER BY id DESC");
             <label class="form-label">Estoque Padrão</label>
             <input type="text" name="estoque_padrao" class="form-control" value="<?= htmlspecialchars($editando['estoque_padrao']) ?>">
           </div>
+          <div class="col-md-6">
+            <label class="form-label">ID Vendedor (Bling)</label>
+            <input type="text" name="vendedor_id" class="form-control" value="<?= htmlspecialchars($editando['vendedor_id'] ?? '') ?>">
+          </div>
           <div class="col-12 d-flex gap-2 mt-3">
             <button class="btn btn-danger w-50">💾 Salvar Alterações</button>
             <a href="editar-usuario.php" class="btn btn-secondary w-50">Cancelar</a>
@@ -110,6 +134,7 @@ $usuarios = $db->query("SELECT * FROM usuarios ORDER BY id DESC");
           <th>Usuário</th>
           <th>Nome</th>
           <th>Estoque Padrão</th>
+          <th>ID Vendedor</th>
           <th style="width:100px">Ações</th>
         </tr>
       </thead>
@@ -120,6 +145,7 @@ $usuarios = $db->query("SELECT * FROM usuarios ORDER BY id DESC");
           <td><?= htmlspecialchars($u['usuario']) ?></td>
           <td><?= htmlspecialchars($u['nome']) ?></td>
           <td><?= htmlspecialchars($u['estoque_padrao'] ?: '-') ?></td>
+          <td><?= htmlspecialchars(($u['vendedor_id'] ?? '') !== '' ? $u['vendedor_id'] : '-') ?></td>
           <td class="text-center">
             <a href="?id=<?= $u['id'] ?>" class="btn btn-sm btn-outline-danger">✏️ Editar</a>
           </td>
