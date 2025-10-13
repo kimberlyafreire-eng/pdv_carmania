@@ -1,6 +1,9 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 
+session_start();
+$usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']) : '';
+
 // ✅ Inclui o helper centralizado do token
 require_once __DIR__ . '/lib/token-helper.php';
 
@@ -40,6 +43,30 @@ $pagamentos      = $input['pagamentos'] ?? [];
 $descontoValor   = (float)($input['descontoValor'] ?? 0);
 $descontoPercent = (float)($input['descontoPercent'] ?? 0);
 $deposito        = $input['deposito'] ?? null; // 🧱 Depósito selecionado no carrinho
+$vendedorId      = $input['vendedorId'] ?? null;
+$usuarioPayload  = isset($input['usuarioLogado']) ? trim((string)$input['usuarioLogado']) : '';
+$usuarioRecibo   = $usuarioPayload !== '' ? $usuarioPayload : $usuarioSessao;
+$usuarioRecibo   = trim($usuarioRecibo);
+if ($usuarioRecibo !== '') {
+    $usuarioRecibo = mb_substr($usuarioRecibo, 0, 80);
+} else {
+    $usuarioRecibo = null;
+}
+
+if (is_string($vendedorId)) {
+    $vendedorId = trim($vendedorId);
+}
+if ($vendedorId === '' || $vendedorId === null) {
+    $vendedorId = null;
+} else {
+    $vendedorId = (int)$vendedorId;
+    if ($vendedorId <= 0) {
+        $vendedorId = null;
+    }
+}
+
+logMsg('🧑‍💼 Vendedor associado: ' . ($vendedorId ?? 'nenhum'));
+logMsg('👤 Atendente: ' . ($usuarioRecibo ?? 'não informado'));
 
 if (empty($carrinho) || !$clienteId) {
     logMsg("Carrinho ou cliente ausente: " . json_encode($input));
@@ -148,6 +175,10 @@ $pedidoPayload = [
     'totalvenda'  => $totalFinal,
     'situacao'    => ['id' => 9] // ✅ "Atendido"
 ];
+
+if ($vendedorId) {
+    $pedidoPayload['vendedor'] = ['id' => $vendedorId];
+}
 
 // Adiciona desconto se houver
 if ($descontoAplicado > 0) {
@@ -282,6 +313,10 @@ if ($pedidoId) {
 
 // 🧾 Recibo HTML
 $itensHtml = '';
+$atendenteHtml = '';
+if ($usuarioRecibo) {
+    $atendenteHtml = "  <p style='margin:2px 0;'>Atendente: <b>" . htmlspecialchars($usuarioRecibo, ENT_QUOTES, 'UTF-8') . "</b></p>";
+}
 foreach ($carrinho as $it) {
     $nome = htmlspecialchars($it['nome'] ?? '', ENT_QUOTES, 'UTF-8');
     $qtd  = (int)$it['quantidade'];
@@ -319,6 +354,7 @@ $reciboHtml = "
   box-shadow:0 0 5px rgba(0,0,0,0.1);
 '>
   <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
+" . $atendenteHtml . "
   <p style='margin:2px 0;'>Pedido: <b>".($pedidoId ?? '-')."</b></p>
   <p style='margin:2px 0;'>Cliente: <b>".htmlspecialchars($clienteNome,ENT_QUOTES,'UTF-8')."</b></p>
   <hr style='border:1px dashed #aaa; margin:6px 0;'>

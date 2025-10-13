@@ -5,6 +5,30 @@ if (!isset($_SESSION['usuario'])) {
     exit();
 }
 $usuarioLogado = $_SESSION['usuario'] ?? null;
+
+$dbFile = __DIR__ . '/../data/pdv_users.sqlite';
+$vendedorId = null;
+
+if ($usuarioLogado) {
+    try {
+        if (file_exists($dbFile)) {
+            $db = new SQLite3($dbFile);
+            $stmt = $db->prepare("SELECT vendedor_id FROM usuarios WHERE LOWER(TRIM(usuario)) = LOWER(TRIM(?)) LIMIT 1");
+            $stmt->bindValue(1, $usuarioLogado, SQLITE3_TEXT);
+            $res = $stmt->execute();
+            $row = $res ? $res->fetchArray(SQLITE3_ASSOC) : null;
+
+            if ($row && isset($row['vendedor_id'])) {
+                $valor = trim((string)$row['vendedor_id']);
+                if ($valor !== '') {
+                    $vendedorId = $valor;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log("Erro ao buscar vendedor_id do usuário: " . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -101,11 +125,13 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
     window.USUARIO_LOGADO = <?= json_encode($usuarioLogado) ?>;
+    window.VENDEDOR_ID = <?= json_encode($vendedorId) ?>;
   </script>
   <script>
     const fmt = (n) => "R$ " + (Number(n)||0).toFixed(2);
     const toNum = (v) => parseFloat((v ?? 0)) || 0;
 
+    const vendedorId = window.VENDEDOR_ID || null;
     const dadosVenda = JSON.parse(localStorage.getItem("dadosVenda") || "null");
     let carrinho = [], clienteSelecionado = null, descontoValor = 0, descontoPercentual = 0, totalVenda = 0;
 
@@ -202,6 +228,8 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
           descontoPercentual,
           carrinho,
           pagamentos,
+          vendedorId: vendedorId || null,
+          usuarioLogado: usuarioLogado || null,
           deposito: depositoSelecionado // ⚠️ essencial para lançar estoque
         };
 
