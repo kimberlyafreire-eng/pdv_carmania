@@ -18,18 +18,15 @@ if(!$accessToken){
 }
 
 $caminhoCache = __DIR__ . '/../cache/clientes-cache.json';
-$cacheExistente = file_exists($caminhoCache) ? file_get_contents($caminhoCache) : null;
-
 
 $pagina = 1;
 $limite = 100;
 $todosClientes = [];
 
-do {
+while (true) {
     $query = http_build_query([
         'pagina' => $pagina,
-        'limite' => $limite,
-        'tipo'   => 'cliente'
+        'limite' => $limite
     ], '', '&', PHP_QUERY_RFC3986);
 
     $url = "https://www.bling.com.br/Api/v3/contatos?$query";
@@ -46,11 +43,6 @@ do {
         $erroCurl = curl_error($ch);
         curl_close($ch);
 
-        if ($cacheExistente !== null) {
-            echo $cacheExistente;
-            exit();
-        }
-
         http_response_code(500);
         echo json_encode(["erro" => "Falha na comunicação com o Bling", "detalhes" => $erroCurl]);
         exit();
@@ -59,11 +51,6 @@ do {
     curl_close($ch);
 
     if ($httpCode !== 200) {
-        if ($cacheExistente !== null) {
-            echo $cacheExistente;
-            exit();
-        }
-
         http_response_code($httpCode);
         echo json_encode(["erro" => "Erro ao consultar Bling", "http" => $httpCode]);
         exit();
@@ -71,38 +58,66 @@ do {
 
     $dados = json_decode($resposta, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        if ($cacheExistente !== null) {
-            echo $cacheExistente;
-            exit();
-        }
-
         http_response_code(500);
         echo json_encode(["erro" => "Resposta inválida do Bling"]);
         exit();
     }
 
     $clientes = isset($dados['data']) && is_array($dados['data']) ? $dados['data'] : [];
+
+    // Alguns contatos não são clientes; filtra apenas os que possuem tipo CLIENTE
+    $clientes = array_values(array_filter($clientes, static function ($contato) {
+        if (!is_array($contato)) {
+            return false;
+        }
+
+        if (isset($contato['tipos']) && is_array($contato['tipos'])) {
+            foreach ($contato['tipos'] as $tipo) {
+                if (is_string($tipo) && strcasecmp($tipo, 'cliente') === 0) {
+                    return true;
+                }
+                if (is_array($tipo) && isset($tipo['descricao']) && strcasecmp($tipo['descricao'], 'cliente') === 0) {
+                    return true;
+                }
+            }
+        }
+
+        return isset($contato['tipo']) && strcasecmp((string) $contato['tipo'], 'cliente') === 0;
+    }));
+
     $todosClientes = array_merge($todosClientes, $clientes);
+
+    $meta = isset($dados['page']) && is_array($dados['page']) ? $dados['page'] : [];
+    $totalPaginas = isset($meta['totalPages']) ? (int) $meta['totalPages'] : null;
+    $paginaAtual = isset($meta['number']) ? (int) $meta['number'] : $pagina;
+    $temProxima = isset($meta['hasNext']) ? (bool) $meta['hasNext'] : null;
+
+    if ($totalPaginas !== null && $paginaAtual >= $totalPaginas) {
+        break;
+    }
+
+    if ($temProxima === false) {
+        break;
+    }
+
+    if (count($clientes) < $limite) {
+        break;
+    }
+
     $pagina++;
-} while (count($clientes) === $limite);
+}
 
 $payload = json_encode([
     'data' => $todosClientes,
 ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 if ($payload === false) {
-    if ($cacheExistente !== null) {
-        echo $cacheExistente;
-        exit();
-    }
-
     http_response_code(500);
     echo json_encode(["erro" => "Falha ao preparar cache de clientes"]);
     exit();
 }
 
-$gravado = file_put_contents($caminhoCache, $payload, LOCK_EX);
-if ($gravado === false) {
+if (file_put_contents($caminhoCache, $payload, LOCK_EX) === false) {
     error_log('[clientes.php] Não foi possível gravar o clientes-cache.json.');
 }
 
