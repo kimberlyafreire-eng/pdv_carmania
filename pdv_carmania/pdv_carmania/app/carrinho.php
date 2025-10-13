@@ -37,6 +37,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Carrinho de Compras - PDV Carmania</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
@@ -54,10 +55,14 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     .navbar-custom {
       background-color: #dc3545;
       padding-block: 0.75rem;
-      gap: 0.75rem;
+    }
+
+    .navbar-inner {
       display: flex;
       flex-direction: column;
       align-items: stretch;
+      gap: 0.75rem;
+      padding-inline: min(4vw, 2.5rem);
     }
 
     .navbar-custom .navbar-title {
@@ -93,17 +98,33 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       padding-block: 1.5rem 2rem;
     }
 
+    .page-header {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .page-header h2 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+    }
+
+    @media (min-width: 768px) {
+      .page-header {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+
     .cart-wrapper .actions-top {
       display: flex;
       gap: 0.75rem;
       flex-wrap: wrap;
     }
 
-    .summary-card {
-      background: #fff;
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06);
+    .summary-card .card-body {
+      padding: 1.5rem;
       display: grid;
       gap: 0.75rem;
     }
@@ -196,9 +217,8 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         font-size: 0.95rem;
       }
 
-      .navbar-custom {
+      .navbar-inner {
         padding-inline: 1rem;
-        align-items: stretch;
       }
 
       .navbar-actions {
@@ -211,6 +231,14 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
       .cart-wrapper {
         padding-inline: 1rem;
+      }
+
+      .page-header {
+        margin-bottom: 1.25rem;
+      }
+
+      .summary-card .card-body {
+        padding: 1.25rem;
       }
 
       .produto-controles {
@@ -229,13 +257,8 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     }
 
     @media (max-width: 576px) {
-      .navbar-custom {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .navbar-custom button.btn-light {
-        align-self: flex-start;
+      .navbar-inner {
+        padding-inline: 0.75rem;
       }
 
       .navbar-actions {
@@ -252,6 +275,14 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       .cart-wrapper {
         padding-inline: 0.75rem;
         padding-bottom: 2.5rem;
+      }
+
+      .page-header h2 {
+        font-size: 1.5rem;
+      }
+
+      .summary-card .card-body {
+        padding: 1.15rem;
       }
 
       .produto-item {
@@ -306,35 +337,47 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 <body>
 
   <!-- Barra superior -->
-  <nav class="navbar navbar-dark navbar-custom px-3">
-    <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-      <button class="btn btn-light" onclick="voltar()">⬅ Voltar</button>
-      <span class="navbar-text text-white fw-bold navbar-title flex-grow-1 text-center text-sm-start">Carrinho</span>
-    </div>
-    <div class="navbar-actions">
+  <nav class="navbar navbar-dark navbar-custom">
+    <div class="container-fluid navbar-inner">
+      <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+        <button class="btn btn-light" onclick="voltar()">⬅ Voltar</button>
+        <span class="navbar-text text-white fw-bold navbar-title flex-grow-1 text-center text-sm-start">Carrinho</span>
+      </div>
+      <div class="navbar-actions">
       <button id="btnEstoque" class="btn estoque-btn" onclick="abrirModalEstoque()">🏷 Estoque: <span id="estoqueSelecionadoLabel">Nenhum</span></button>
       <button id="btnAtualizarEstoque" class="btn btn-outline-warning" onclick="atualizarEstoqueLocal()">🔄 Atualizar Estoque</button>
       <button class="btn btn-outline-light" onclick="abrirModalCliente()">
         <span id="btnClienteLabel">Selecionar Cliente</span>
       </button>
+      </div>
     </div>
   </nav>
 
   <main class="container cart-wrapper">
+    <div class="page-header">
+      <div>
+        <h2 class="mb-1">Carrinho de Vendas</h2>
+        <p class="text-muted mb-0">Confirme os itens, escolha o cliente e finalize a venda rapidamente.</p>
+      </div>
+      <button class="btn btn-success btn-lg align-self-start d-none d-md-inline-flex" onclick="irParaPagamento()">💰 Finalizar Venda</button>
+    </div>
+
     <div id="produtos-carrinho" class="mb-3"></div>
 
-    <div class="summary-card mt-4">
-      <div class="row-line">
-        <span>Total:</span><span id="totalBruto">R$ 0,00</span>
-      </div>
-      <div class="row-line text-success fw-bold">
-        <span>Total com Desconto:</span><span id="totalComDesconto">R$ 0,00</span>
+    <div class="card shadow-sm summary-card mt-4">
+      <div class="card-body">
+        <div class="row-line">
+          <span>Total:</span><span id="totalBruto">R$ 0,00</span>
+        </div>
+        <div class="row-line text-success fw-bold">
+          <span>Total com Desconto:</span><span id="totalComDesconto">R$ 0,00</span>
+        </div>
       </div>
     </div>
 
     <div class="actions-top mt-4">
       <button class="btn btn-outline-primary flex-fill btn-sm-full" onclick="abrirModalDesconto()">Aplicar Desconto</button>
-      <button class="btn btn-success flex-fill btn-sm-full" onclick="irParaPagamento()">💰 Finalizar Venda</button>
+      <button class="btn btn-success flex-fill btn-sm-full d-md-none" onclick="irParaPagamento()">💰 Finalizar Venda</button>
     </div>
     <button class="btn btn-danger w-100 mt-2" onclick="limparCarrinho()">🗑 Limpar Carrinho</button>
   </main>
