@@ -17,8 +17,8 @@ if(!$accessToken){
     exit();
 }
 
-$caminhoCache = __DIR__ . '/../cache/clientes-cache.json';
 $cacheExistente = file_exists($caminhoCache) ? file_get_contents($caminhoCache) : null;
+$caminhoCache = __DIR__ . '/../cache/clientes-cache.json';
 
 $pagina = 1;
 $limite = 100;
