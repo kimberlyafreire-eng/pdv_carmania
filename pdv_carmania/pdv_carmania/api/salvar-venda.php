@@ -343,7 +343,8 @@ foreach ($nomesFormas as $f) {
 
 $reciboHtml = "
 <div id='recibo' style='
-  width:260px;
+  width:220px;
+  max-width:100%;
   margin:0 auto;
   font-family:monospace;
   font-size:13px;
@@ -352,6 +353,9 @@ $reciboHtml = "
   padding:10px;
   border-radius:8px;
   box-shadow:0 0 5px rgba(0,0,0,0.1);
+  box-sizing:border-box;
+  max-height:80vh;
+  overflow-y:auto;
 '>
   <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
 " . $atendenteHtml . "
