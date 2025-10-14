@@ -342,21 +342,35 @@ foreach ($nomesFormas as $f) {
 }
 
 $reciboHtml = "
-<div id='recibo' style='
-  width:220px;
-  max-width:100%;
+<div id='recibo-wrapper' style='
+  max-width:420px;
+  width:min(420px, 100%);
+  height:calc(90vh - 80px);
   margin:0 auto;
-  font-family:monospace;
-  font-size:13px;
-  text-align:center;
-  background:#fff;
-  padding:10px;
-  border-radius:8px;
-  box-shadow:0 0 5px rgba(0,0,0,0.1);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding:20px;
   box-sizing:border-box;
-  max-height:80vh;
-  overflow-y:auto;
+  background:#ffffff;
+  border-radius:14px;
+  box-shadow:0 0 12px rgba(0,0,0,0.12);
 '>
+  <div id='recibo' style='
+    width:240px;
+    max-width:100%;
+    margin:0 auto;
+    font-family:monospace;
+    font-size:13px;
+    text-align:center;
+    background:#fff;
+    padding:14px 12px;
+    border-radius:10px;
+    box-shadow:0 0 6px rgba(0,0,0,0.08);
+    box-sizing:border-box;
+    max-height:100%;
+    overflow-y:auto;
+  '>
   <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
 " . $atendenteHtml . "
   <p style='margin:2px 0;'>Pedido: <b>".($pedidoId ?? '-')."</b></p>
@@ -386,7 +400,8 @@ $reciboHtml .= "
   
   <p style='margin:2px 0;'>Estoque: <b>".htmlspecialchars($deposito['nome'] ?? 'Não informado')."</b></p>
   <hr style='border:1px dashed #aaa; margin:6px 0;'>
-  <p style='margin:5px 0; font-size:12px;'>Obrigado pela preferência!</p>
+  <p style='margin:5px 0; font-size:12px; color:#222;'>Obrigado pela preferência!</p>
+  </div>
 </div>";
 
 // 💳 Se for crediário, adiciona saldo
