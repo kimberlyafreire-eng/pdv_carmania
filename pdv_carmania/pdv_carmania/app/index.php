@@ -29,9 +29,14 @@ if (!isset($_SESSION['usuario'])) {
       height: 100px;
     }
     .product-name {
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      line-height: 1.2;
+      min-height: calc(1.2em * 3);
+      word-break: break-word;
     }
     .badge-carrinho {
       position: absolute;
@@ -70,12 +75,12 @@ if (!isset($_SESSION['usuario'])) {
   <!-- Navbar -->
   <nav class="navbar navbar-dark bg-danger">
     <div class="container-fluid d-flex justify-content-between">
-      <!-- Botão menu hamburguer -->
+      <!-- Bot00o menu hamburguer -->
       <button class="btn btn-outline-light" type="button" data-bs-toggle="offcanvas" data-bs-target="#menuLateral">
         MENU
       </button>
 
-      <!-- Botão sair -->
+      <!-- Bot00o sair -->
       <a href="logout.php" class="btn btn-outline-light">Sair</a>
     </div>
   </nav>
@@ -124,7 +129,7 @@ if (!isset($_SESSION['usuario'])) {
     </div>
   </div>
 
-  <!-- Botões móveis -->
+  <!-- Bot01es mveis -->
   <a href="carrinho.php" class="btn btn-success cart-btn d-lg-none py-3 w-100 text-center">
     Carrinho (<span id="cart-count">0</span>)
   </a>
@@ -149,7 +154,7 @@ if (!isset($_SESSION['usuario'])) {
     atualizarContadorCarrinho();
     destacarNoCard(produto.id);
 
-    // atualizar número entre os botões
+    // atualizar nmero entre os bot01es
     const qtdSpan = document.getElementById('qtd-' + produto.id);
     if (qtdSpan) {
       const item = carrinho.find(p => p.id === produto.id);
@@ -168,7 +173,7 @@ if (!isset($_SESSION['usuario'])) {
       atualizarContadorCarrinho();
       destacarNoCard(produtoId);
 
-      // atualizar número entre os botões
+      // atualizar nmero entre os bot01es
       const qtdSpan = document.getElementById('qtd-' + produtoId);
       if (qtdSpan) {
         const item = carrinho.find(p => p.id === produtoId);
