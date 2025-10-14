@@ -1,8 +1,7 @@
 <?php
-// CONFIGURAÇÕES
-$client_id = 'c04c4a60229a850f4c932da08d3f0a7e5e32b976';
-$client_secret = '104ac382735af76c4b1c380b481bc3ff3c9146d88dcd5d7553bb84b24b49';
+require_once __DIR__ . '/lib/token-helper.php';
 
+// CONFIGURAÇÕES
 $tokenFile   = __DIR__ . '/token.json';
 $dbFile      = __DIR__ . '/../db/produtos.db';
 $imagensPath = __DIR__ . '/../imagens';
@@ -14,58 +13,109 @@ if (!is_dir(dirname($dbFile))) mkdir(dirname($dbFile), 0777, true);
 if (!is_dir($imagensPath)) mkdir($imagensPath, 0777, true);
 if (!is_dir($logDir)) mkdir($logDir, 0777, true);
 
-// FUNÇÃO DE LOG
-function logMsg($msg) {
+function logAtualizacao($msg) {
     global $logFile;
     $line = "[" . date('Y-m-d H:i:s') . "] " . $msg . PHP_EOL;
-    echo $msg . "\n"; // também mostra no terminal
+    echo $msg . "\n";
     file_put_contents($logFile, $line, FILE_APPEND);
 }
 
-logMsg("🔁 Iniciando atualização de produtos...");
+function downloadImagem(string $url, string $destino): bool {
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return false;
+    }
 
-// VALIDAR TOKEN
+    $fp = fopen($destino, 'w');
+    if ($fp === false) {
+        curl_close($ch);
+        return false;
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_FILE            => $fp,
+        CURLOPT_FOLLOWLOCATION  => true,
+        CURLOPT_CONNECTTIMEOUT  => 10,
+        CURLOPT_TIMEOUT         => 30,
+        CURLOPT_FAILONERROR     => true,
+        CURLOPT_USERAGENT       => 'PDV Carmania/1.0'
+    ]);
+
+    $exec = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    fclose($fp);
+    curl_close($ch);
+
+    if ($exec === false || $httpCode >= 400) {
+        if (file_exists($destino)) {
+            unlink($destino);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+logAtualizacao("🔁 Iniciando atualização de produtos...");
+
 if (!file_exists($tokenFile)) {
-    logMsg("❌ Token não encontrado. Execute o auth.php manualmente.");
+    logAtualizacao("❌ Token não encontrado. Execute o auth.php manualmente.");
     exit;
 }
 
-$tokenData = json_decode(file_get_contents($tokenFile), true);
-$refresh_token = $tokenData['refresh_token'] ?? '';
-$credentials = base64_encode("$client_id:$client_secret");
+$access_token = getAccessToken();
 
-// RENOVAR TOKEN
-$ch = curl_init('https://bling.com.br/Api/v3/oauth/token');
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
-    'grant_type' => 'refresh_token',
-    'refresh_token' => $refresh_token
-]));
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Authorization: Basic $credentials",
-    "Content-Type: application/x-www-form-urlencoded"
-]);
-
-$response = curl_exec($ch);
-$httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-if ($httpcode !== 200) {
-    logMsg("❌ Erro ao renovar token: HTTP $httpcode");
-    logMsg("Resposta: $response");
-    exit;
-}
-
-$newToken = json_decode($response, true);
-file_put_contents($tokenFile, json_encode($newToken, JSON_PRETTY_PRINT));
-$access_token = $newToken['access_token'] ?? '';
 if (!$access_token) {
-    logMsg("❌ Access token ausente.");
-    exit;
+    logAtualizacao("⚠️ Token indisponível. Tentando renovar...");
+    if (!refreshAccessToken()) {
+        logAtualizacao("❌ Não foi possível renovar o token.");
+        exit;
+    }
+    $access_token = getAccessToken();
+    if (!$access_token) {
+        logAtualizacao("❌ Access token ainda indisponível após renovação.");
+        exit;
+    }
 }
 
-logMsg("✅ Token renovado.");
+logAtualizacao("✅ Token carregado.");
+
+$blingBase = 'https://bling.com.br/Api/v3';
+
+function buscarPaginaProdutos(int $pagina, int $tentativa = 0)
+{
+    global $blingBase, $access_token;
+
+    $url = rtrim($blingBase, '/') . "/produtos?pagina={$pagina}&limite=100";
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "Authorization: Bearer {$access_token}",
+            "Content-Type: application/json"
+        ],
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 30
+    ]);
+
+    $response = curl_exec($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpcode === 401 && $tentativa < 1) {
+        logAtualizacao("⚠️ Token expirado ao buscar página {$pagina}. Renovando...");
+        if (refreshAccessToken()) {
+            $access_token = getAccessToken();
+            if ($access_token) {
+                return buscarPaginaProdutos($pagina, $tentativa + 1);
+            }
+        }
+        logAtualizacao("❌ Falha ao renovar token durante a sincronização.");
+    }
+
+    return [$httpcode, $response];
+}
 
 // CONECTAR OU CRIAR BANCO DE DADOS
 $db = new SQLite3($dbFile);
@@ -82,21 +132,11 @@ $pagina = 1;
 $totalInseridos = 0;
 
 do {
-    $url = "https://bling.com.br/Api/v3/produtos?pagina=$pagina&limite=100";
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: Bearer {$access_token}",
-        "Content-Type: application/json"
-    ]);
-    $response = curl_exec($ch);
-    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    [$httpcode, $response] = buscarPaginaProdutos($pagina);
 
     if ($httpcode !== 200) {
-        logMsg("❌ Erro ao buscar página $pagina: HTTP $httpcode");
-        logMsg("⏳ Tentando novamente após 5s...");
+        logAtualizacao("❌ Erro ao buscar página $pagina: HTTP $httpcode");
+        logAtualizacao("⏳ Tentando novamente após 5s...");
         sleep(5);
         continue;
     }
@@ -104,7 +144,7 @@ do {
     $dados = json_decode($response, true);
     $produtos = $dados['data'] ?? [];
 
-    logMsg("📦 Página $pagina - " . count($produtos) . " produtos");
+    logAtualizacao("📦 Página $pagina - " . count($produtos) . " produtos");
 
     if (empty($produtos)) break;
 
@@ -113,25 +153,38 @@ do {
         $codigo = $db->escapeString($p['codigo']);
         $nome = $db->escapeString($p['nome']);
         $preco = isset($p['preco']) ? (float) $p['preco'] : 0.00;
-        $urlImg = $p['imagem'] ?? null;
+        $urlImg = $p['imagemURL'] ?? ($p['imagem'] ?? null);
         $localImg = null;
 
         if ($urlImg && filter_var($urlImg, FILTER_VALIDATE_URL)) {
-            $ext = pathinfo(parse_url($urlImg, PHP_URL_PATH), PATHINFO_EXTENSION);
-            $localImg = "$id." . ($ext ?: 'jpg');
-            $destino = "$imagensPath/$localImg";
+            $path = parse_url($urlImg, PHP_URL_PATH) ?? '';
+            $nomeArquivo = basename($path) ?: ($id . '.jpg');
+            $ext = pathinfo($nomeArquivo, PATHINFO_EXTENSION);
 
-            try {
+            if (!$ext) {
+                $nomeArquivo .= '.jpg';
+            }
+
+            $pastaProduto = $imagensPath . '/' . $id;
+            if (!is_dir($pastaProduto) && !mkdir($pastaProduto, 0777, true) && !is_dir($pastaProduto)) {
+                logAtualizacao("⚠️ Não foi possível criar a pasta de imagens para o produto $id");
+            } else {
+                $destino = $pastaProduto . '/' . $nomeArquivo;
+
                 if (!file_exists($destino)) {
-                    file_put_contents($destino, file_get_contents($urlImg));
+                    if (!downloadImagem($urlImg, $destino)) {
+                        $localImg = null;
+                        logAtualizacao("⚠️ Falha ao baixar imagem do produto $id");
+                    } else {
+                        $localImg = $id . '/' . $nomeArquivo;
+                    }
+                } else {
+                    $localImg = $id . '/' . $nomeArquivo;
                 }
-            } catch (Exception $e) {
-                $localImg = null;
-                logMsg("⚠️ Falha ao baixar imagem do produto $id");
             }
         }
 
-        $stmt = $db->prepare("INSERT OR REPLACE INTO produtos 
+        $stmt = $db->prepare("INSERT OR REPLACE INTO produtos
             (id, codigo, nome, preco, imagem_url, imagem_local) 
             VALUES (:id, :codigo, :nome, :preco, :url, :local)");
         $stmt->bindValue(':id', $id);
@@ -150,5 +203,5 @@ do {
 
 } while (true);
 
-logMsg("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos");
+logAtualizacao("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos");
 ?>
