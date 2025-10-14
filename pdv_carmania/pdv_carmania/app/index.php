@@ -96,6 +96,7 @@ if (!isset($_SESSION['usuario'])) {
         <li><a class="btn btn-outline-danger w-100 mb-2" href="index.php">Vender</a></li>
         <li><a class="btn btn-outline-danger w-100 mb-2" href="clientes.php">Clientes</a></li>
         <li><a class="btn btn-outline-danger w-100 mb-2" href="receber.php">Receber</a></li>
+        <li><a class="btn btn-outline-danger w-100 mb-2" href="caixa.php">Caixa</a></li>
         <li><a class="btn btn-outline-danger w-100" href="produtos.php">Produtos</a></li>
       </ul>
     </div>
