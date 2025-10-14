@@ -819,10 +819,66 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       return true;
     }
 
-    function irParaPagamento() {
+    async function verificarCaixaDepositoAberto() {
+      if (!depositoSelecionado || !depositoSelecionado.id) {
+        throw new Error('Depósito não selecionado.');
+      }
+
+      const params = new URLSearchParams({
+        depositoId: depositoSelecionado.id,
+        depositoNome: depositoSelecionado.nome || '',
+        _: Date.now().toString()
+      });
+
+      let resposta;
+      try {
+        resposta = await fetch(`../api/caixa.php?${params.toString()}`);
+      } catch (erro) {
+        console.error('Erro de rede ao validar status do caixa:', erro);
+        throw new Error('Não foi possível verificar o status do caixa. Verifique sua conexão e tente novamente.');
+      }
+
+      let json = null;
+      try {
+        json = await resposta.json();
+      } catch (erro) {
+        console.error('Resposta inválida ao consultar o caixa:', erro);
+      }
+
+      if (!resposta.ok) {
+        const mensagemErro = json && json.erro ? json.erro : 'Falha ao verificar o status do caixa do depósito selecionado.';
+        throw new Error(mensagemErro);
+      }
+
+      if (!json || !json.ok) {
+        const mensagemErro = json && json.erro ? json.erro : 'Não foi possível obter o status do caixa.';
+        throw new Error(mensagemErro);
+      }
+
+      const status = json && json.caixa && json.caixa.status
+        ? String(json.caixa.status).toLowerCase()
+        : '';
+      return status === 'aberto';
+    }
+
+    async function irParaPagamento() {
       if (!clienteSelecionado) return alert("Selecione um cliente.");
       if (!depositoSelecionado) return alert("Selecione um estoque.");
       if (!verificarEstoqueAntesVenda()) return;
+
+      let caixaAberto = false;
+      try {
+        caixaAberto = await verificarCaixaDepositoAberto();
+      } catch (erro) {
+        alert(erro.message || 'Não foi possível verificar o status do caixa.');
+        return;
+      }
+
+      if (!caixaAberto) {
+        const nomeDeposito = depositoSelecionado.nome ? ` do depósito ${depositoSelecionado.nome}` : '';
+        alert(`O caixa${nomeDeposito} está fechado. Abra o caixa antes de finalizar a venda.`);
+        return;
+      }
 
       const total = totalCarrinho();
       const val = Number(descontoValor) || 0;

@@ -457,7 +457,8 @@ if ($usuarioLogado) {
           valorAplicado = faltaAtual;
         }
       } else if (valorAplicado > falta + 0.0001) {
-        valorAplicado = falta;
+        alert(`Valor informado (${fmt(valorAplicado)}) é maior que o valor faltante (${fmt(falta)}). Ajuste o valor ou selecione a opção em dinheiro.`);
+        return;
       }
 
       valorAplicado = Math.round(valorAplicado * 100) / 100;
