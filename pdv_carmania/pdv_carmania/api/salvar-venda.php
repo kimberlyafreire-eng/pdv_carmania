@@ -341,60 +341,92 @@ foreach ($nomesFormas as $f) {
       </tr>";
 }
 
-$reciboHtml = "
-<div id='recibo-wrapper' style='
-  width:100%;
-  min-height:100vh;
-  margin:0 auto;
-  display:flex;
-  justify-content:center;
-  align-items:flex-start;
-  padding:16px 0;
-  box-sizing:border-box;
-  overflow-y:auto;
-'>
-  <div id='recibo' style='
-    width:240px;
+$reciboHtml = <<<HTML
+<style>
+  #recibo-preview-stage {
+    width:100vw;
+    height:100vh;
+    margin:0;
+    padding:clamp(8px,4vh,24px) 0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    box-sizing:border-box;
+    overflow:auto;
+    -webkit-overflow-scrolling:touch;
+    background:transparent;
+  }
+  #recibo-preview {
+    width:min(26vw, 18em);
     max-width:100%;
     font-family:monospace;
-    font-size:13px;
+    font-size:clamp(14px, 2.1vh, 18px);
+    line-height:1.35;
     text-align:center;
     background:#fff;
-    padding:16px 12px 20px;
+    color:#111;
+    padding:12px 0 20px;
     box-sizing:border-box;
-  '>
-  <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
-" . $atendenteHtml . "
-  <p style='margin:2px 0;'>Pedido: <b>".($pedidoId ?? '-')."</b></p>
-  <p style='margin:2px 0;'>Cliente: <b>".htmlspecialchars($clienteNome,ENT_QUOTES,'UTF-8')."</b></p>
-  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
+    margin:0 auto;
+  }
+  #recibo-preview table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:0.9em;
+  }
+  #recibo-preview td {
+    padding:2px 4px;
+    text-align:left;
+  }
+  #recibo-preview td:last-child {
+    text-align:right;
+  }
+  #recibo-preview .recibo-divider {
+    border:0;
+    border-top:1px solid #e0e0e0;
+    margin:10px 0;
+  }
+  @media (max-width: 768px) {
+    #recibo-preview-stage {
+      align-items:flex-start;
+      padding:clamp(12px,6vh,32px) 0;
+    }
+    #recibo-preview {
+      width:min(94vw, 18.5em);
+      font-size:clamp(14px, 4.8vw, 19px);
+    }
+  }
+</style>
+<div id='recibo-preview-stage'>
+  <div id='recibo-preview'>
+    <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
+HTML;
 
-  <table style='width:100%;font-size:12px;margin-bottom:5px;'>$itensHtml</table>
-  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
-  
-  <table style='width:100%;font-size:12px;'>
-    <tr><td style='text-align:left;'>Total Bruto</td><td style='text-align:right;'>R$ ".number_format($totalBruto,2,',','.')."</td></tr>";
+$reciboHtml .= $atendenteHtml;
 
+$reciboHtml .= "    <p style='margin:2px 0;'>Pedido: <b>" . ($pedidoId ?? '-') . "</b></p>";
+$reciboHtml .= "    <p style='margin:2px 0;'>Cliente: <b>" . htmlspecialchars($clienteNome, ENT_QUOTES, 'UTF-8') . "</b></p>";
+$reciboHtml .= "    <hr class='recibo-divider'>";
+$reciboHtml .= "    <table style='margin-bottom:6px;'>$itensHtml</table>";
+$reciboHtml .= "    <hr class='recibo-divider'>";
+$reciboHtml .= "    <table>";
+$reciboHtml .= "      <tr><td>Total Bruto</td><td>R$ " . number_format($totalBruto, 2, ',', '.') . "</td></tr>";
 if ($descontoAplicado>0) {
-    $reciboHtml .= "
-    <tr><td style='text-align:left;'>Desconto</td><td style='text-align:right;'>R$ ".number_format($descontoAplicado,2,',','.')."</td></tr>";
+    $reciboHtml .= "      <tr><td>Desconto</td><td>R$ " . number_format($descontoAplicado, 2, ',', '.') . "</td></tr>";
 }
+$reciboHtml .= "      <tr><td colspan='2'><hr class='recibo-divider'></td></tr>";
+$reciboHtml .= "      <tr><td><b>Total Final</b></td><td><b>R$ " . number_format($totalFinal, 2, ',', '.') . "</b></td></tr>";
+$reciboHtml .= "    </table>";
+$reciboHtml .= "    <hr class='recibo-divider'>";
+$reciboHtml .= "    <p style='margin:3px 0; font-weight:bold;'>Pagamentos</p>";
+$reciboHtml .= "    <table>$formasHtml</table>";
+$reciboHtml .= "    <hr class='recibo-divider'>";
+$reciboHtml .= "    <p style='margin:2px 0;'>Estoque: <b>" . htmlspecialchars($deposito['nome'] ?? 'Não informado', ENT_QUOTES, 'UTF-8') . "</b></p>";
+$reciboHtml .= "    <hr class='recibo-divider'>";
+$reciboHtml .= "    <p style='margin:5px 0; font-size:0.9em; color:#222;'>Obrigado pela preferência!</p>";
+$reciboHtml .= "  </div>";
+$reciboHtml .= "</div>";
 
-$reciboHtml .= "
-    <tr><td colspan='2'><hr style='border:0;border-top:1px solid #e0e0e0;'></td></tr>
-    <tr><td style='text-align:left;'><b>Total Final</b></td><td style='text-align:right;'><b>R$ ".number_format($totalFinal,2,',','.')."</b></td></tr>
-  </table>
-
-  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
-  <p style='margin:3px 0; font-weight:bold;'>Pagamentos</p>
-  <table style='width:100%;font-size:12px;'>$formasHtml</table>
-  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
-
-  <p style='margin:2px 0;'>Estoque: <b>".htmlspecialchars($deposito['nome'] ?? 'Não informado')."</b></p>
-  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
-  <p style='margin:5px 0; font-size:12px; color:#222;'>Obrigado pela preferência!</p>
-  </div>
-</div>";
 
 // 💳 Se for crediário, adiciona saldo
 if ($isCrediario && $clienteId) {
