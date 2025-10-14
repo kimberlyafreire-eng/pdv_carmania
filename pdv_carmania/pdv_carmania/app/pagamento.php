@@ -37,30 +37,219 @@ if ($usuarioLogado) {
   <title>Formas de Pagamento - PDV Carmania</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body { background: #f8f9fa; }
-    .navbar-custom { background-color: #dc3545; }
-    .total-display {
-      font-size: 2rem;
-      font-weight: bold;
-      text-align: center;
-      margin: 20px 0;
+    :root {
+      color-scheme: light;
     }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      background: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .navbar-custom {
+      background-color: #dc3545;
+    }
+
+    #telaPagamento {
+      flex: 1;
+      display: flex;
+      padding: 1.5rem 0;
+    }
+
+    .pagamento-conteudo {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .resumo-card {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      padding: 1.75rem;
+    }
+
+    .resumo-valores {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .valor-destaque {
+      border: 2px solid rgba(220, 53, 69, 0.2);
+      border-radius: 14px;
+      padding: 1rem 1.25rem;
+      background: rgba(220, 53, 69, 0.06);
+    }
+
+    .valor-destaque.total {
+      background: rgba(33, 37, 41, 0.05);
+      border-color: rgba(33, 37, 41, 0.15);
+    }
+
+    .valor-destaque .label {
+      display: block;
+      font-size: 0.9rem;
+      color: #6c757d;
+      margin-bottom: 0.35rem;
+    }
+
+    .valor-destaque .valor {
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      font-weight: 700;
+      color: #212529;
+      display: block;
+    }
+
+    .valor-destaque.faltando .valor {
+      color: #dc3545;
+    }
+
+    .status-pagamento {
+      margin-top: 0.35rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #495057;
+    }
+
+    .status-pagamento.completo {
+      color: #198754;
+    }
+
+    .lista-pagamentos-container h5 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .lista-pagamentos-container .list-group-item {
+      border-radius: 12px;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      margin-bottom: 0.5rem;
+    }
+
+    .lista-pagamentos-container .list-group-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .lista-vazia {
+      font-size: 0.9rem;
+      color: #6c757d;
+      margin-top: 0.5rem;
+    }
+
+    .formas-wrapper {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .formas-wrapper h5 {
+      font-weight: 600;
+    }
+
+    .formas-grid {
+      display: grid;
+      gap: 0.9rem;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    }
+
     .forma-card {
-      background: white;
+      background: #ffffff;
       border: 2px solid #dc3545;
-      border-radius: 8px;
-      padding: 20px;
+      border-radius: 14px;
+      padding: 0;
+      width: 100%;
+      aspect-ratio: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       text-align: center;
+      font-weight: 600;
+      color: #dc3545;
+      transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       cursor: pointer;
-      font-weight: bold;
-      transition: 0.2s;
       user-select: none;
     }
-    .forma-card:hover { background: #dc3545; color: white; }
-    .resumo-pagamentos { margin-top: 20px; }
-    .btn-remove { font-weight: bold; }
-    #reciboContainer { text-align:center; margin-top:20px; }
-    #reciboImg { max-width:220px; border:1px dashed #aaa; display:block; margin:0 auto; }
+
+    .forma-card:hover,
+    .forma-card:focus {
+      background: #dc3545;
+      color: #ffffff;
+      transform: translateY(-2px);
+      outline: none;
+      box-shadow: 0 8px 18px rgba(220, 53, 69, 0.25);
+    }
+
+    .forma-card:active {
+      transform: scale(0.97);
+    }
+
+    #reciboContainer {
+      display: none;
+      width: 100%;
+      padding: 2.5rem 1rem 3rem;
+      justify-content: center;
+    }
+
+    #reciboContainer.ativo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .recibo-area {
+      background: #ffffff;
+      border-radius: 18px;
+      box-shadow: 0 16px 35px rgba(0, 0, 0, 0.12);
+      padding: 1.5rem;
+      display: flex;
+      justify-content: center;
+      width: min(100%, 380px);
+    }
+
+    #reciboImg {
+      width: 100%;
+      height: auto;
+      border-radius: 12px;
+      border: 1px dashed #adb5bd;
+      background: #f8f9fa;
+    }
+
+    .recibo-acoes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+
+    @media (max-width: 576px) {
+      .pagamento-conteudo {
+        padding-inline: 0.75rem;
+      }
+
+      .resumo-card {
+        padding: 1.25rem;
+      }
+
+      .formas-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .recibo-area {
+        width: min(100%, 320px);
+        padding: 1rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -72,34 +261,49 @@ if ($usuarioLogado) {
     <div></div>
   </nav>
 
-  <div class="container py-3" id="telaPagamento">
-    <div class="total-display">
-      Total da Venda: <span id="valorTotal">R$ 0,00</span>
+  <main class="container-fluid" id="telaPagamento">
+    <div class="container pagamento-conteudo">
+      <section class="resumo-card">
+        <div class="resumo-valores">
+          <div class="valor-destaque total">
+            <span class="label">Total da venda</span>
+            <span class="valor" id="valorTotal">R$ 0,00</span>
+          </div>
+          <div class="valor-destaque faltando">
+            <span class="label">Valor pendente</span>
+            <span class="valor" id="valorFaltante">R$ 0,00</span>
+            <div class="status-pagamento" id="statusPagamento">Faltando calcular…</div>
+          </div>
+        </div>
+        <div class="lista-pagamentos-container mt-4">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Pagamentos adicionados</h5>
+            <span class="badge text-bg-light" id="qtdPagamentos">0</span>
+          </div>
+          <ul class="list-group mt-3" id="listaPagamentos"></ul>
+          <p class="lista-vazia" id="listaVazia">Nenhuma forma de pagamento adicionada até o momento.</p>
+        </div>
+      </section>
+
+      <section class="formas-wrapper">
+        <div>
+          <h5>Selecione a forma de pagamento</h5>
+          <div class="formas-grid">
+            <button class="forma-card" type="button" onclick="selecionarForma('Pix', 7697682)">Pix</button>
+            <button class="forma-card" type="button" onclick="selecionarForma('Crédito', 2941151)">Crédito</button>
+            <button class="forma-card" type="button" onclick="selecionarForma('Débito', 2941150)">Débito</button>
+            <button class="forma-card" type="button" onclick="selecionarForma('Crediário', 8126949)">Crediário</button>
+            <button class="forma-card" type="button" onclick="selecionarForma('Dinheiro', 2009802)">💵 Dinheiro</button>
+          </div>
+        </div>
+        <button class="btn btn-success w-100 btn-lg" id="btnConcluir" disabled onclick="concluirVenda()">
+          ✅ Concluir Venda
+        </button>
+      </section>
     </div>
+  </main>
 
-    <h5>Selecione a forma de pagamento</h5>
-    <div class="row g-2 mb-3">
-      <div class="col-6 col-md-3"><div class="forma-card" onclick="selecionarForma('Pix', 7697682)">Pix</div></div>
-      <div class="col-6 col-md-3"><div class="forma-card" onclick="selecionarForma('Crédito', 2941151)">Crédito</div></div>
-      <div class="col-6 col-md-3"><div class="forma-card" onclick="selecionarForma('Débito', 2941150)">Débito</div></div>
-      <div class="col-6 col-md-3"><div class="forma-card" onclick="selecionarForma('Crediário', 8126949)">Crediário</div></div>
-      <div class="col-6 col-md-3"><div class="forma-card" onclick="selecionarForma('Dinheiro', 2009802)">💵 Dinheiro</div></div>
-    </div>
-
-    <!-- Resumo dos pagamentos -->
-    <div class="resumo-pagamentos">
-      <h5>Pagamentos adicionados</h5>
-      <ul class="list-group" id="listaPagamentos"></ul>
-      <div class="mt-3 fw-bold" id="faltando"></div>
-    </div>
-
-    <button class="btn btn-success w-100 btn-lg mt-3" id="btnConcluir" disabled onclick="concluirVenda()">
-      ✅ Concluir Venda
-    </button>
-  </div>
-
-  <!-- Container do recibo -->
-  <div id="reciboContainer" class="container py-3" style="display:none;"></div>
+  <div id="reciboContainer" class="container"></div>
 
   <!-- Modal valor -->
   <div class="modal fade" id="modalValor" tabindex="-1">
@@ -177,17 +381,41 @@ if ($usuarioLogado) {
     function removerPagamento(i){ pagamentos.splice(i,1); atualizarLista(); }
 
     function atualizarLista(){
-      const lista = document.getElementById("listaPagamentos"); lista.innerHTML="";
+      const lista = document.getElementById("listaPagamentos");
+      const badgeQtd = document.getElementById("qtdPagamentos");
+      const avisoLista = document.getElementById("listaVazia");
+      const statusPagamento = document.getElementById("statusPagamento");
+      const valorFaltante = document.getElementById("valorFaltante");
+
+      lista.innerHTML="";
       let totalPago=0;
       pagamentos.forEach((p,i)=>{
         totalPago+=toNum(p.valor);
         lista.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">
-          <span>${p.forma}</span>
+          <span class="fw-semibold">${p.forma}</span>
           <span>${fmt(p.valor)} <button class="btn btn-sm btn-outline-danger ms-2" onclick="removerPagamento(${i})">&times;</button></span>
         </li>`;
       });
-      const falta = totalVenda-totalPago;
-      document.getElementById("faltando").textContent = falta>0.001? "Falta pagar: "+fmt(falta):"Pagamento completo!";
+
+      const falta = Math.max(0, totalVenda-totalPago);
+      valorFaltante.textContent = fmt(falta);
+
+      if(pagamentos.length){
+        avisoLista.classList.add("d-none");
+      } else {
+        avisoLista.classList.remove("d-none");
+      }
+
+      badgeQtd.textContent = pagamentos.length;
+
+      if (falta > 0.01) {
+        statusPagamento.textContent = `Falta pagar ${fmt(falta)}`;
+        statusPagamento.classList.remove("completo");
+      } else {
+        statusPagamento.textContent = "Pagamento completo!";
+        statusPagamento.classList.add("completo");
+      }
+
       document.getElementById("btnConcluir").disabled = falta>0.001;
     }
 
@@ -245,15 +473,16 @@ if ($usuarioLogado) {
 
         localStorage.clear();
         document.getElementById("telaPagamento").style.display = "none";
-        document.getElementById("reciboContainer").style.display = "block";
-        document.getElementById("reciboContainer").innerHTML = `<div id="recibo">${data.reciboHtml}</div>`;
+        const reciboContainer = document.getElementById("reciboContainer");
+        reciboContainer.classList.add("ativo");
+        reciboContainer.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
 
         gerarImagemRecibo().then(()=>{
-          document.getElementById("reciboContainer").innerHTML += `
-            <div class="mt-3">
-              <button class="btn btn-primary me-2" onclick="imprimirRecibo()">🖨 Imprimir</button>
-              <button class="btn btn-secondary me-2" onclick="copiarRecibo()">📋 Copiar</button>
-              <button class="btn btn-success me-2" onclick="compartilharRecibo()">📤 Compartilhar</button>
+          reciboContainer.innerHTML += `
+            <div class="recibo-acoes">
+              <button class="btn btn-primary" onclick="imprimirRecibo()">🖨 Imprimir</button>
+              <button class="btn btn-secondary" onclick="copiarRecibo()">📋 Copiar</button>
+              <button class="btn btn-success" onclick="compartilharRecibo()">📤 Compartilhar</button>
               <button class="btn btn-dark" onclick="window.location.href='index.php'">⬅ Nova Venda</button>
             </div>`;
         });
