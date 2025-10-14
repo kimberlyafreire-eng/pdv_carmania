@@ -140,6 +140,49 @@ function obterCaixaPorDeposito(SQLite3 $db, string $depositoId, string $deposito
     return $row;
 }
 
+function calcularSaldoDesdeUltimaAbertura(SQLite3 $db, int $caixaId): float
+{
+    $stmtAbertura = $db->prepare(
+        'SELECT m.id, m.data_hora
+           FROM caixa_movimentacoes m
+           JOIN caixa_tipos_movimentacao t ON m.tipo_id = t.id
+          WHERE m.caixa_id = ? AND t.slug = "abertura"
+          ORDER BY datetime(m.data_hora) DESC, m.id DESC
+          LIMIT 1'
+    );
+    $stmtAbertura->bindValue(1, $caixaId, SQLITE3_INTEGER);
+    $resAbertura = $stmtAbertura->execute();
+    $ultimaAbertura = $resAbertura ? $resAbertura->fetchArray(SQLITE3_ASSOC) : null;
+
+    $sqlSaldo =
+        'SELECT COALESCE(SUM(CASE WHEN t.slug = "fechamento" THEN 0 ELSE m.valor * m.natureza END), 0) AS saldo
+           FROM caixa_movimentacoes m
+           JOIN caixa_tipos_movimentacao t ON m.tipo_id = t.id
+          WHERE m.caixa_id = ?';
+
+    if ($ultimaAbertura) {
+        $sqlSaldo .=
+            ' AND (datetime(m.data_hora) > datetime(?)
+                OR (datetime(m.data_hora) = datetime(?) AND m.id >= ?))';
+    }
+
+    $stmtSaldo = $db->prepare($sqlSaldo);
+    $stmtSaldo->bindValue(1, $caixaId, SQLITE3_INTEGER);
+
+    if ($ultimaAbertura) {
+        $stmtSaldo->bindValue(2, $ultimaAbertura['data_hora'], SQLITE3_TEXT);
+        $stmtSaldo->bindValue(3, $ultimaAbertura['data_hora'], SQLITE3_TEXT);
+        $stmtSaldo->bindValue(4, (int) $ultimaAbertura['id'], SQLITE3_INTEGER);
+    }
+
+    $resSaldo = $stmtSaldo->execute();
+    $rowSaldo = $resSaldo ? $resSaldo->fetchArray(SQLITE3_ASSOC) : null;
+
+    $saldo = $rowSaldo && isset($rowSaldo['saldo']) ? (float) $rowSaldo['saldo'] : 0.0;
+
+    return round($saldo, 2);
+}
+
 function obterTipoPorSlug(SQLite3 $db, string $slug): ?array
 {
     $stmt = $db->prepare('SELECT * FROM caixa_tipos_movimentacao WHERE slug = ? LIMIT 1');
@@ -248,6 +291,7 @@ function obterResumoCaixa(SQLite3 $db, array $caixa): array
         'status' => $caixa['status'],
         'saldoAtual' => (float) $caixa['saldo_atual'],
         'atualizadoEm' => $caixa['atualizado_em'],
+        'saldoCalculado' => calcularSaldoDesdeUltimaAbertura($db, (int) $caixa['id']),
     ];
 }
 
@@ -269,8 +313,8 @@ function registrarMovimentacaoCaixa(
     string $observacao,
     ?string $usuarioLogin
 ): array {
-    if ($valor <= 0) {
-        throw new InvalidArgumentException('Informe um valor maior que zero.');
+    if ($valor < 0) {
+        throw new InvalidArgumentException('Informe um valor maior ou igual a zero.');
     }
 
     $db = getCaixaDb();
@@ -281,22 +325,46 @@ function registrarMovimentacaoCaixa(
         throw new InvalidArgumentException('Tipo de movimentação inválido.');
     }
 
+    if ($tipo['slug'] !== 'fechamento' && $valor <= 0) {
+        throw new InvalidArgumentException('Informe um valor maior que zero.');
+    }
+
     $validacao = validarOperacaoStatus($caixa['status'], $tipo['slug']);
     if (!$validacao['permitido']) {
         throw new LogicException('Operação não permitida para o status atual do caixa.');
     }
 
     $observacao = trim($observacao);
-    if (mb_strlen($observacao) > 140) {
-        $observacao = mb_substr($observacao, 0, 140);
-    }
 
     $usuario = obterUsuarioPorLogin($usuarioLogin);
     $usuarioId = $usuario['id'] ?? null;
     $usuarioNome = $usuario['nome'] ?? $usuarioLogin;
 
     $valor = round($valor, 2);
-    $novoSaldo = round($caixa['saldo_atual'] + ($valor * $tipo['natureza']), 2);
+    $saldoCalculadoFechamento = null;
+
+    if ($tipo['slug'] === 'fechamento') {
+        $saldoCalculadoFechamento = calcularSaldoDesdeUltimaAbertura($db, (int) $caixa['id']);
+        $saldoEsperado = round($saldoCalculadoFechamento, 2);
+        $diferenca = round($valor - $saldoEsperado, 2);
+        if (abs($diferenca) >= 0.01) {
+            $textoDiferenca = 'Diferença: ' . ($diferenca >= 0 ? '+' : '-') . 'R$ ' . number_format(abs($diferenca), 2, ',', '.');
+            if ($observacao !== '') {
+                $observacao .= ' | ';
+            }
+            $observacao .= $textoDiferenca;
+        }
+    }
+
+    if (mb_strlen($observacao) > 140) {
+        $observacao = mb_substr($observacao, 0, 140);
+    }
+
+    $valorParaSaldo = $tipo['slug'] === 'fechamento' ? 0.0 : ($valor * $tipo['natureza']);
+    $novoSaldoCalculado = $tipo['slug'] === 'fechamento' && $saldoCalculadoFechamento !== null
+        ? $saldoCalculadoFechamento
+        : $caixa['saldo_atual'] + $valorParaSaldo;
+    $novoSaldo = round($novoSaldoCalculado, 2);
     $agora = date('c');
 
     $db->exec('BEGIN');
