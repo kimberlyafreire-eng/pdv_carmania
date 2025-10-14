@@ -83,6 +83,7 @@ function seedCaixaTipos(SQLite3 $db): void
         ['slug' => 'retirada', 'nome' => 'Retirada', 'natureza' => -1],
         ['slug' => 'abastecimento', 'nome' => 'Abastecimento', 'natureza' => 1],
         ['slug' => 'troco', 'nome' => 'Troco', 'natureza' => -1],
+        ['slug' => 'venda', 'nome' => 'Venda', 'natureza' => 1],
     ];
 
     $insert = $db->prepare('INSERT OR IGNORE INTO caixa_tipos_movimentacao (slug, nome, natureza) VALUES (?, ?, ?)');
@@ -238,6 +239,7 @@ function validarOperacaoStatus(string $statusAtual, string $tipoSlug): array
         case 'retirada':
         case 'abastecimento':
         case 'troco':
+        case 'venda':
             return [
                 'permitido' => $statusAtual === 'Aberto',
                 'novo_status' => $statusAtual,
@@ -342,17 +344,25 @@ function registrarMovimentacaoCaixa(
 
     $valor = round($valor, 2);
     $saldoCalculadoFechamento = null;
+    $saldoEsperadoFechamento = null;
+    $diferencaFechamento = 0.0;
+    $valorFechamentoConsiderado = $valor;
 
     if ($tipo['slug'] === 'fechamento') {
         $saldoCalculadoFechamento = calcularSaldoDesdeUltimaAbertura($db, (int) $caixa['id']);
-        $saldoEsperado = round($saldoCalculadoFechamento, 2);
-        $diferenca = round($valor - $saldoEsperado, 2);
-        if (abs($diferenca) >= 0.01) {
-            $textoDiferenca = 'Diferença: ' . ($diferenca >= 0 ? '+' : '-') . 'R$ ' . number_format(abs($diferenca), 2, ',', '.');
+        $saldoEsperadoFechamento = round($saldoCalculadoFechamento, 2);
+        $diferencaFechamento = round($valor - $saldoEsperadoFechamento, 2);
+        if (abs($diferencaFechamento) >= 0.01) {
+            $textoDiferenca = 'Diferença: ' . ($diferencaFechamento >= 0 ? '+' : '-') . 'R$ ' . number_format(abs($diferencaFechamento), 2, ',', '.');
             if ($observacao !== '') {
                 $observacao .= ' | ';
             }
             $observacao .= $textoDiferenca;
+        } else {
+            $diferencaFechamento = 0.0;
+            $valorFechamentoConsiderado = $saldoEsperadoFechamento !== null
+                ? $saldoEsperadoFechamento
+                : $valor;
         }
     }
 
@@ -360,11 +370,15 @@ function registrarMovimentacaoCaixa(
         $observacao = mb_substr($observacao, 0, 140);
     }
 
-    $valorParaSaldo = $tipo['slug'] === 'fechamento' ? 0.0 : ($valor * $tipo['natureza']);
-    $novoSaldoCalculado = $tipo['slug'] === 'fechamento' && $saldoCalculadoFechamento !== null
-        ? $saldoCalculadoFechamento
-        : $caixa['saldo_atual'] + $valorParaSaldo;
-    $novoSaldo = round($novoSaldoCalculado, 2);
+    if ($tipo['slug'] === 'fechamento') {
+        if ($saldoEsperadoFechamento !== null) {
+            $novoSaldo = round($saldoEsperadoFechamento + $diferencaFechamento, 2);
+        } else {
+            $novoSaldo = round($valorFechamentoConsiderado, 2);
+        }
+    } else {
+        $novoSaldo = round($caixa['saldo_atual'] + ($valor * $tipo['natureza']), 2);
+    }
     $agora = date('c');
 
     $db->exec('BEGIN');
