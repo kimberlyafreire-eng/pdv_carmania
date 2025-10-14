@@ -121,6 +121,10 @@ if ($usuarioLogado) {
       color: #dc3545;
     }
 
+    .valor-destaque.troco .valor {
+      color: #0d6efd;
+    }
+
     .status-pagamento {
       margin-top: 0.35rem;
       font-size: 0.85rem;
@@ -331,6 +335,11 @@ if ($usuarioLogado) {
             <span class="valor" id="valorFaltante">R$ 0,00</span>
             <div class="status-pagamento" id="statusPagamento">Faltando calcular…</div>
           </div>
+          <div class="valor-destaque troco d-none" id="valorTrocoWrapper">
+            <span class="label">Troco</span>
+            <span class="valor" id="valorTroco">R$ 0,00</span>
+            <div class="status-pagamento">Troco a devolver</div>
+          </div>
         </div>
         <div class="lista-pagamentos-container mt-4">
           <div class="d-flex justify-content-between align-items-center">
@@ -412,7 +421,14 @@ if ($usuarioLogado) {
 
     document.getElementById("valorTotal").textContent = fmt(totalVenda);
 
-    let pagamentos = [], formaSelecionada = null;
+    let pagamentos = [], formaSelecionada = null, totalTrocoAtual = 0;
+
+    function isDinheiro(forma){
+      if(!forma) return false;
+      const nome = String(forma.nome || '').toLowerCase();
+      const id = String(forma.id || '');
+      return nome.includes('dinheiro') || id === '2009802';
+    }
 
     function voltar(){ window.location.href = "carrinho.php"; }
 
@@ -426,11 +442,36 @@ if ($usuarioLogado) {
 
     function adicionarPagamento(){
       if (!formaSelecionada) return;
-      let valor = toNum(document.getElementById("valorPagamento").value);
+      let valorInformado = toNum(document.getElementById("valorPagamento").value);
       const falta = calcularFaltando();
-      if (valor <= 0) return alert("Valor inválido.");
-      if (valor > falta + 0.0001) valor = falta;
-      pagamentos.push({ forma: formaSelecionada.nome, id: formaSelecionada.id, valor });
+      if (valorInformado <= 0) return alert("Valor inválido.");
+
+      valorInformado = Math.round(valorInformado * 100) / 100;
+      let valorAplicado = valorInformado;
+      let troco = 0;
+
+      if (isDinheiro(formaSelecionada)) {
+        const faltaAtual = falta;
+        if (valorAplicado > faltaAtual) {
+          troco = Math.max(0, valorAplicado - faltaAtual);
+          valorAplicado = faltaAtual;
+        }
+      } else if (valorAplicado > falta + 0.0001) {
+        valorAplicado = falta;
+      }
+
+      valorAplicado = Math.round(valorAplicado * 100) / 100;
+      troco = Math.round(troco * 100) / 100;
+
+      if (valorAplicado <= 0) return alert("Valor inválido para esta forma de pagamento.");
+
+      pagamentos.push({
+        forma: formaSelecionada.nome,
+        id: formaSelecionada.id,
+        valor: valorAplicado,
+        valorInformado,
+        troco
+      });
       atualizarLista();
       bootstrap.Modal.getInstance(document.getElementById("modalValor")).hide();
     }
@@ -443,19 +484,32 @@ if ($usuarioLogado) {
       const avisoLista = document.getElementById("listaVazia");
       const statusPagamento = document.getElementById("statusPagamento");
       const valorFaltante = document.getElementById("valorFaltante");
+      const trocoWrapper = document.getElementById("valorTrocoWrapper");
+      const trocoValor = document.getElementById("valorTroco");
 
       lista.innerHTML="";
       let totalPago=0;
+      totalTrocoAtual = 0;
       pagamentos.forEach((p,i)=>{
         totalPago+=toNum(p.valor);
+        totalTrocoAtual+=toNum(p.troco);
+        const valorMostrado = 'valorInformado' in p ? p.valorInformado : p.valor;
+        const trocoInfo = p.troco > 0 ? `<small class="text-muted ms-2">(Troco ${fmt(p.troco)})</small>` : '';
         lista.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">
           <span class="fw-semibold">${p.forma}</span>
-          <span>${fmt(p.valor)} <button class="btn btn-sm btn-outline-danger ms-2" onclick="removerPagamento(${i})">&times;</button></span>
+          <span>${fmt(valorMostrado)} ${trocoInfo} <button class="btn btn-sm btn-outline-danger ms-2" onclick="removerPagamento(${i})">&times;</button></span>
         </li>`;
       });
 
       const falta = Math.max(0, totalVenda-totalPago);
       valorFaltante.textContent = fmt(falta);
+
+      if (totalTrocoAtual > 0.009) {
+        trocoValor.textContent = fmt(totalTrocoAtual);
+        trocoWrapper.classList.remove("d-none");
+      } else {
+        trocoWrapper.classList.add("d-none");
+      }
 
       if(pagamentos.length){
         avisoLista.classList.add("d-none");
@@ -513,6 +567,7 @@ if ($usuarioLogado) {
           descontoPercentual,
           carrinho,
           pagamentos,
+          trocoTotal: totalTrocoAtual,
           vendedorId: vendedorId || null,
           usuarioLogado: usuarioLogado || null,
           deposito: depositoSelecionado // ⚠️ essencial para lançar estoque

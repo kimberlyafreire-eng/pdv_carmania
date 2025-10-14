@@ -6,6 +6,7 @@ $usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']
 
 // ✅ Inclui o helper centralizado do token
 require_once __DIR__ . '/lib/token-helper.php';
+require_once __DIR__ . '/lib/caixa-helper.php';
 
 // ⚙️ Caminhos e configs
 $logDir  = __DIR__ . '/../logs';
@@ -145,11 +146,50 @@ foreach ($carrinho as $it) {
 // 💳 Parcelas
 $parcelas = [];
 $nomesFormas = [];
+$trocoTotalInformado = round((float)($input['trocoTotal'] ?? 0), 2);
+$trocoTotalCalculado = 0.0;
+
+if (!is_array($pagamentos)) {
+    $pagamentos = [];
+}
+
+foreach ($pagamentos as &$pagamentoNormalizado) {
+    $valorAplicado = round((float)($pagamentoNormalizado['valor'] ?? 0), 2);
+    $valorInformado = isset($pagamentoNormalizado['valorInformado'])
+        ? round((float)$pagamentoNormalizado['valorInformado'], 2)
+        : $valorAplicado;
+    if ($valorAplicado < 0) {
+        $valorAplicado = 0.0;
+    }
+    if ($valorInformado < $valorAplicado) {
+        $valorInformado = $valorAplicado;
+    }
+    $trocoPagamento = isset($pagamentoNormalizado['troco'])
+        ? max(0.0, round((float)$pagamentoNormalizado['troco'], 2))
+        : 0.0;
+    if ($trocoPagamento > $valorInformado) {
+        $trocoPagamento = $valorInformado;
+    }
+
+    $pagamentoNormalizado['valor'] = $valorAplicado;
+    $pagamentoNormalizado['valorInformado'] = $valorInformado;
+    $pagamentoNormalizado['troco'] = $trocoPagamento;
+
+    $trocoTotalCalculado += $trocoPagamento;
+}
+unset($pagamentoNormalizado);
+
+$trocoTotalCalculado = round($trocoTotalCalculado, 2);
+if (abs($trocoTotalCalculado - $trocoTotalInformado) > 0.01) {
+    logMsg("ℹ️ Divergência entre troco informado ({$trocoTotalInformado}) e calculado ({$trocoTotalCalculado}).");
+}
 if (!empty($pagamentos)) {
     foreach ($pagamentos as $p) {
         $id    = (int)($p['id'] ?? 0);
         $nome  = $p['forma'] ?? $p['nome'] ?? "Forma $id";
         $valor = round((float)($p['valor'] ?? 0), 2);
+        $valorInformado = round((float)($p['valorInformado'] ?? $valor), 2);
+        $trocoPagamento = round((float)($p['troco'] ?? 0), 2);
         if ($id > 0 && $valor > 0) {
             $parcelas[] = [
                 'dataVencimento' => date('Y-m-d'),
@@ -157,7 +197,12 @@ if (!empty($pagamentos)) {
                 'formaPagamento' => ['id' => $id],
                 'observacoes'    => 'Pagamento via PDV Carmania'
             ];
-            $nomesFormas[] = ['nome' => $nome, 'valor' => $valor];
+            $nomesFormas[] = [
+                'nome' => $nome,
+                'valor' => $valorInformado,
+                'valorAplicado' => $valor,
+                'troco' => $trocoPagamento
+            ];
         }
     }
 } else {
@@ -311,6 +356,36 @@ if ($pedidoId) {
 
 
 
+/* =====================================================
+   💵 3. REGISTRAR TROCO NO CAIXA (QUANDO EXISTIR)
+   ===================================================== */
+if ($trocoTotalCalculado > 0.01) {
+    $depositoIdTroco = $depositoId ?? ($input['depositoId'] ?? null);
+    $depositoNomeTroco = '';
+    if (is_array($deposito)) {
+        $depositoNomeTroco = (string)($deposito['nome'] ?? '');
+    }
+
+    if ($depositoIdTroco) {
+        $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+        try {
+            registrarMovimentacaoCaixa(
+                (string)$depositoIdTroco,
+                $depositoNomeTroco,
+                'troco',
+                $trocoTotalCalculado,
+                'Troco devolvido na venda ' . $pedidoId,
+                $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
+            );
+            logMsg("💸 Troco registrado no caixa do depósito {$depositoIdTroco}: R$ {$trocoTotalCalculado}");
+        } catch (Throwable $e) {
+            logMsg('⚠️ Falha ao registrar troco no caixa: ' . $e->getMessage());
+        }
+    } else {
+        logMsg('⚠️ Troco identificado, porém sem depósito válido para registrar no caixa.');
+    }
+}
+
 // 🧾 Recibo HTML
 $itensHtml = '';
 $atendenteHtml = '';
@@ -334,10 +409,17 @@ foreach ($carrinho as $it) {
 
 $formasHtml = '';
 foreach ($nomesFormas as $f) {
+    $valorPrincipal = number_format($f['valor'],2,',','.');
+    $detalheLinha = '';
+    if (!empty($f['troco'])) {
+        $valorAplicadoFmt = number_format($f['valorAplicado'] ?? $f['valor'], 2, ',', '.');
+        $trocoFmt = number_format($f['troco'], 2, ',', '.');
+        $detalheLinha = "<br><small style='color:#6c757d;'>Aplicado: R$ {$valorAplicadoFmt} &middot; Troco: R$ {$trocoFmt}</small>";
+    }
     $formasHtml .= "
       <tr>
         <td style='text-align:left;'>{$f['nome']}</td>
-        <td style='text-align:right;'><b>R$ ".number_format($f['valor'],2,',','.')."</b></td>
+        <td style='text-align:right;'><b>R$ {$valorPrincipal}</b>{$detalheLinha}</td>
       </tr>";
 }
 
