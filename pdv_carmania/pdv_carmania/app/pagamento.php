@@ -479,7 +479,35 @@ if ($usuarioLogado) {
 
     function removerPagamento(i){ pagamentos.splice(i,1); atualizarLista(); }
 
+    function recalcularDistribuicaoDinheiro(){
+      if (!pagamentos.some(p => isDinheiro(p))) return;
+
+      let totalNaoDinheiro = pagamentos
+        .filter(p => !isDinheiro(p))
+        .reduce((s, p) => s + toNum(p.valor), 0);
+      totalNaoDinheiro = Math.round(totalNaoDinheiro * 100) / 100;
+
+      let restante = Math.max(0, totalVenda - totalNaoDinheiro);
+      restante = Math.round(restante * 100) / 100;
+
+      pagamentos.forEach(p => {
+        if (!isDinheiro(p)) return;
+
+        const valorInformado = toNum('valorInformado' in p ? p.valorInformado : p.valor);
+        const valorAplicado = Math.min(restante, valorInformado);
+        const trocoCalculado = Math.max(0, valorInformado - valorAplicado);
+
+        p.valor = Math.round(valorAplicado * 100) / 100;
+        p.troco = Math.round(trocoCalculado * 100) / 100;
+
+        restante = Math.max(0, restante - p.valor);
+        restante = Math.round(restante * 100) / 100;
+      });
+    }
+
     function atualizarLista(){
+      recalcularDistribuicaoDinheiro();
+
       const lista = document.getElementById("listaPagamentos");
       const badgeQtd = document.getElementById("qtdPagamentos");
       const avisoLista = document.getElementById("listaVazia");
