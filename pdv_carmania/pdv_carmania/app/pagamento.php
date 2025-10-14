@@ -34,6 +34,7 @@ if ($usuarioLogado) {
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Formas de Pagamento - PDV Carmania</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
@@ -59,33 +60,41 @@ if ($usuarioLogado) {
     #telaPagamento {
       flex: 1;
       display: flex;
-      padding: 1.5rem 0;
+      padding: 1.5rem clamp(0.75rem, 2vw, 2rem);
     }
 
     .pagamento-conteudo {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
+      gap: 1.8rem;
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .pagamento-conteudo.container {
+      max-width: 100%;
+      padding-inline: clamp(1rem, 3vw, 2.5rem);
     }
 
     .resumo-card {
       background: #ffffff;
       border-radius: 16px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-      padding: 1.75rem;
+      padding: 2.1rem;
     }
 
     .resumo-valores {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
+      gap: 1.2rem;
     }
 
     .valor-destaque {
       border: 2px solid rgba(220, 53, 69, 0.2);
       border-radius: 14px;
-      padding: 1rem 1.25rem;
+      padding: 1.2rem 1.5rem;
       background: rgba(220, 53, 69, 0.06);
     }
 
@@ -102,7 +111,7 @@ if ($usuarioLogado) {
     }
 
     .valor-destaque .valor {
-      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      font-size: clamp(1.9rem, 5vw, 2.6rem);
       font-weight: 700;
       color: #212529;
       display: block;
@@ -158,8 +167,8 @@ if ($usuarioLogado) {
 
     .formas-grid {
       display: grid;
-      gap: 0.9rem;
-      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 1.1rem;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     }
 
     .forma-card {
@@ -178,6 +187,8 @@ if ($usuarioLogado) {
       transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       cursor: pointer;
       user-select: none;
+      font-size: 1.05rem;
+      padding-inline: 0.35rem;
     }
 
     .forma-card:hover,
@@ -211,18 +222,18 @@ if ($usuarioLogado) {
       background: #ffffff;
       border-radius: 18px;
       box-shadow: 0 16px 35px rgba(0, 0, 0, 0.12);
-      padding: 1.5rem;
+      padding: 2.25rem;
       display: flex;
       justify-content: center;
-      width: min(100%, 380px);
+      width: min(100%, 570px);
     }
 
     #reciboImg {
       width: 100%;
       height: auto;
       border-radius: 12px;
-      border: 1px dashed #adb5bd;
-      background: #f8f9fa;
+      border: none;
+      background: transparent;
     }
 
     .recibo-acoes {
@@ -232,22 +243,68 @@ if ($usuarioLogado) {
       justify-content: center;
     }
 
+    #modalValor .modal-dialog {
+      max-width: 420px;
+      width: 100%;
+      margin: 1.5rem auto;
+    }
+
+    #modalValor .modal-content {
+      border-radius: 18px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #modalValor .form-control {
+      font-size: 1.1rem;
+      padding: 0.85rem 1rem;
+    }
+
+    #modalValor .modal-body {
+      flex: 1;
+    }
+
     @media (max-width: 576px) {
-      .pagamento-conteudo {
-        padding-inline: 0.75rem;
+      #telaPagamento {
+        padding: 1rem 0.75rem 2rem;
+      }
+
+      .pagamento-conteudo.container {
+        padding-inline: 0.5rem;
       }
 
       .resumo-card {
-        padding: 1.25rem;
+        padding: 1.75rem;
       }
 
       .formas-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .forma-card {
+        min-height: 140px;
+      }
+
       .recibo-area {
-        width: min(100%, 320px);
-        padding: 1rem;
+        width: min(100%, 480px);
+        padding: 1.5rem;
+      }
+
+      #modalValor .modal-dialog {
+        margin: 0;
+        max-width: none;
+        height: 100%;
+      }
+
+      #modalValor .modal-content {
+        height: 100%;
+        border-radius: 0;
+      }
+
+      #modalValor .modal-body {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
       }
     }
   </style>
@@ -306,8 +363,8 @@ if ($usuarioLogado) {
   <div id="reciboContainer" class="container"></div>
 
   <!-- Modal valor -->
-  <div class="modal fade" id="modalValor" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+  <div class="modal fade" id="modalValor" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Inserir valor</h5>
