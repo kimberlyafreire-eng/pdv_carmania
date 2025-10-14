@@ -347,6 +347,7 @@ function registrarMovimentacaoCaixa(
     $saldoEsperadoFechamento = null;
     $diferencaFechamento = 0.0;
     $valorFechamentoConsiderado = $valor;
+    $diferencaAbertura = 0.0;
 
     if ($tipo['slug'] === 'fechamento') {
         $saldoCalculadoFechamento = calcularSaldoDesdeUltimaAbertura($db, (int) $caixa['id']);
@@ -364,6 +365,19 @@ function registrarMovimentacaoCaixa(
                 ? $saldoEsperadoFechamento
                 : $valor;
         }
+    } elseif ($tipo['slug'] === 'abertura') {
+        $saldoAnterior = round((float) $caixa['saldo_atual'], 2);
+        $diferencaAbertura = round($valor - $saldoAnterior, 2);
+        if (abs($diferencaAbertura) >= 0.01) {
+            $textoDiferenca = 'Diferença: ' . ($diferencaAbertura >= 0 ? '+' : '-')
+                . 'R$ ' . number_format(abs($diferencaAbertura), 2, ',', '.');
+            if ($observacao !== '') {
+                $observacao .= ' | ';
+            }
+            $observacao .= $textoDiferenca;
+        } else {
+            $diferencaAbertura = 0.0;
+        }
     }
 
     if (mb_strlen($observacao) > 140) {
@@ -376,6 +390,8 @@ function registrarMovimentacaoCaixa(
         } else {
             $novoSaldo = round($valorFechamentoConsiderado, 2);
         }
+    } elseif ($tipo['slug'] === 'abertura') {
+        $novoSaldo = round($valor, 2);
     } else {
         $novoSaldo = round($caixa['saldo_atual'] + ($valor * $tipo['natureza']), 2);
     }
