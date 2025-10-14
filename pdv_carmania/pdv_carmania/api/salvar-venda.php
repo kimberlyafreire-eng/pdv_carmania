@@ -54,6 +54,11 @@ if ($usuarioRecibo !== '') {
     $usuarioRecibo = null;
 }
 
+$depositoNome = '';
+if (is_array($deposito)) {
+    $depositoNome = (string)($deposito['nome'] ?? '');
+}
+
 if (is_string($vendedorId)) {
     $vendedorId = trim($vendedorId);
 }
@@ -114,6 +119,24 @@ function bling_request($method, $path, $body = null) {
     }
 
     return ['http' => $http, 'body' => $resp];
+}
+
+function pagamentoEhDinheiro(array $pagamento): bool
+{
+    $idValor = $pagamento['id'] ?? null;
+    if ($idValor !== null) {
+        $idString = trim((string) $idValor);
+        if ($idString !== '' && (int) $idString === 2009802) {
+            return true;
+        }
+    }
+
+    $nome = strtolower(trim((string) ($pagamento['forma'] ?? $pagamento['nome'] ?? '')));
+    if ($nome !== '' && mb_stripos($nome, 'dinheiro') !== false) {
+        return true;
+    }
+
+    return false;
 }
 
 // 💰 Cálculo dos totais
@@ -183,6 +206,21 @@ $trocoTotalCalculado = round($trocoTotalCalculado, 2);
 if (abs($trocoTotalCalculado - $trocoTotalInformado) > 0.01) {
     logMsg("ℹ️ Divergência entre troco informado ({$trocoTotalInformado}) e calculado ({$trocoTotalCalculado}).");
 }
+
+$valorTotalDinheiroInformado = 0.0;
+foreach ($pagamentos as $p) {
+    if (!is_array($p) || !pagamentoEhDinheiro($p)) {
+        continue;
+    }
+    $valorInformadoDinheiro = isset($p['valorInformado'])
+        ? round((float) $p['valorInformado'], 2)
+        : round((float) ($p['valor'] ?? 0), 2);
+    if ($valorInformadoDinheiro > 0) {
+        $valorTotalDinheiroInformado += $valorInformadoDinheiro;
+    }
+}
+$valorTotalDinheiroInformado = round($valorTotalDinheiroInformado, 2);
+
 if (!empty($pagamentos)) {
     foreach ($pagamentos as $p) {
         $id    = (int)($p['id'] ?? 0);
@@ -357,27 +395,54 @@ if ($pedidoId) {
 
 
 /* =====================================================
-   💵 3. REGISTRAR TROCO NO CAIXA (QUANDO EXISTIR)
+   💵 3. REGISTRAR VENDA EM DINHEIRO NO CAIXA
    ===================================================== */
-if ($trocoTotalCalculado > 0.01) {
-    $depositoIdTroco = $depositoId ?? ($input['depositoId'] ?? null);
-    $depositoNomeTroco = '';
-    if (is_array($deposito)) {
-        $depositoNomeTroco = (string)($deposito['nome'] ?? '');
-    }
-
-    if ($depositoIdTroco) {
+$depositoIdCaixa = $depositoId ?? ($input['depositoId'] ?? null);
+if ($valorTotalDinheiroInformado > 0.01) {
+    if ($depositoIdCaixa) {
         $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+        $observacaoVenda = 'Venda em dinheiro';
+        if ($pedidoId) {
+            $observacaoVenda .= ' ' . $pedidoId;
+        }
         try {
             registrarMovimentacaoCaixa(
-                (string)$depositoIdTroco,
-                $depositoNomeTroco,
-                'troco',
-                $trocoTotalCalculado,
-                'Troco devolvido na venda ' . $pedidoId,
+                (string)$depositoIdCaixa,
+                $depositoNome,
+                'venda',
+                $valorTotalDinheiroInformado,
+                $observacaoVenda,
                 $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
             );
-            logMsg("💸 Troco registrado no caixa do depósito {$depositoIdTroco}: R$ {$trocoTotalCalculado}");
+            logMsg("🧾 Venda em dinheiro registrada no caixa do depósito {$depositoIdCaixa}: R$ {$valorTotalDinheiroInformado}");
+        } catch (Throwable $e) {
+            logMsg('⚠️ Falha ao registrar venda em dinheiro no caixa: ' . $e->getMessage());
+        }
+    } else {
+        logMsg('⚠️ Venda em dinheiro identificada, porém sem depósito válido para registrar no caixa.');
+    }
+}
+
+/* =====================================================
+   💸 4. REGISTRAR TROCO NO CAIXA (QUANDO EXISTIR)
+   ===================================================== */
+if ($trocoTotalCalculado > 0.01) {
+    if ($depositoIdCaixa) {
+        $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+        $observacaoTroco = 'Troco devolvido na venda';
+        if ($pedidoId) {
+            $observacaoTroco .= ' ' . $pedidoId;
+        }
+        try {
+            registrarMovimentacaoCaixa(
+                (string)$depositoIdCaixa,
+                $depositoNome,
+                'troco',
+                $trocoTotalCalculado,
+                $observacaoTroco,
+                $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
+            );
+            logMsg("💸 Troco registrado no caixa do depósito {$depositoIdCaixa}: R$ {$trocoTotalCalculado}");
         } catch (Throwable $e) {
             logMsg('⚠️ Falha ao registrar troco no caixa: ' . $e->getMessage());
         }
