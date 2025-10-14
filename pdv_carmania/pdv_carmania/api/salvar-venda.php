@@ -341,6 +341,83 @@ foreach ($nomesFormas as $f) {
       </tr>";
 }
 
+$resumoCrediarioHtml = '';
+if ($isCrediario && $clienteId) {
+    // Helper p/ chamar saldo.php por POST JSON no mesmo host
+    $callSaldo = function(string $path, array $payload) {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $url    = $scheme . '://' . $host . $path;
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json','Accept: application/json'],
+            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_TIMEOUT        => 10,
+        ]);
+        $resp = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        curl_close($ch);
+
+        logMsg("↪️ saldo.php: POST $url (HTTP $http)" . ($err ? " ERR=$err" : ""));
+        return [$http, $resp];
+    };
+
+    $saldoAntes = 0.0;
+    $payloadSaldo = ['clienteId' => (string)$clienteId];
+
+    // Tenta primeiro /api/crediario/saldo.php, depois /api/saldo.php
+    $tentativas = [
+        '/pdv_carmania/api/crediario/saldo.php',
+        '/pdv_carmania/api/saldo.php',
+    ];
+
+    foreach ($tentativas as $path) {
+        [$http, $resp] = $callSaldo($path, $payloadSaldo);
+        if ($http === 200 && $resp) {
+            $jsonSaldo = json_decode($resp, true);
+            if (!empty($jsonSaldo['ok']) && isset($jsonSaldo['saldoAtual'])) {
+                $saldoAntes = (float)$jsonSaldo['saldoAtual'];
+                logMsg("✅ Saldo obtido via $path -> R$ " . number_format($saldoAntes, 2, ',', '.'));
+                break;
+            } else {
+                logMsg("⚠️ Resposta inesperada de $path -> $resp");
+            }
+        } else {
+            logMsg("⚠️ Falha ao consultar $path (HTTP $http) -> $resp");
+        }
+    }
+
+    $novoSaldo = $saldoAntes + $totalFinal;
+
+    // Bloco visual do resumo do crediário (centralizado)
+    $resumoCrediarioHtml = "
+    <div style='
+      width:260px;
+      margin:10px auto 6px;
+      font-family:monospace;
+      font-size:13px;
+      text-align:center;
+      background:#f9f9f9;
+      padding:8px;
+      border-radius:6px;
+      border:1px dashed #aaa;
+    '>
+      <p style='margin:3px 0;font-weight:bold;'>💳 Resumo do Crediário</p>
+      <table style='width:100%;font-size:12px;'>
+        <tr><td style='text-align:left;'>Saldo Anterior:</td><td style='text-align:right;'>R$ ".number_format($saldoAntes,2,',','.')."</td></tr>
+        <tr><td style='text-align:left;'>Compra Atual:</td><td style='text-align:right;'>R$ ".number_format($totalFinal,2,',','.')."</td></tr>
+        <tr><td colspan='2'><hr style='border:0;border-top:1px dashed #ccc;'></td></tr>
+        <tr><td style='text-align:left;'><b>Novo Saldo:</b></td><td style='text-align:right;color:#dc3545;'><b>R$ ".number_format($novoSaldo,2,',','.')."</b></td></tr>
+      </table>
+    </div>";
+
+    logMsg("💳 Saldo anterior: {$saldoAntes} | Compra: {$totalFinal} | Novo saldo: {$novoSaldo}");
+}
+
 $reciboHtml = <<<HTML
 <style>
   #recibo-preview-stage {
@@ -420,91 +497,13 @@ $reciboHtml .= "    </table>";
 $reciboHtml .= "    <hr class='recibo-divider'>";
 $reciboHtml .= "    <p style='margin:3px 0; font-weight:bold;'>Pagamentos</p>";
 $reciboHtml .= "    <table>$formasHtml</table>";
+$reciboHtml .= $resumoCrediarioHtml;
 $reciboHtml .= "    <hr class='recibo-divider'>";
 $reciboHtml .= "    <p style='margin:2px 0;'>Estoque: <b>" . htmlspecialchars($deposito['nome'] ?? 'Não informado', ENT_QUOTES, 'UTF-8') . "</b></p>";
 $reciboHtml .= "    <hr class='recibo-divider'>";
 $reciboHtml .= "    <p style='margin:5px 0; font-size:0.9em; color:#222;'>Obrigado pela preferência!</p>";
 $reciboHtml .= "  </div>";
 $reciboHtml .= "</div>";
-
-
-// 💳 Se for crediário, adiciona saldo
-if ($isCrediario && $clienteId) {
-    // Helper p/ chamar saldo.php por POST JSON no mesmo host
-    $callSaldo = function(string $path, array $payload) {
-        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $url    = $scheme . '://' . $host . $path;
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json','Accept: application/json'],
-            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_TIMEOUT        => 10,
-        ]);
-        $resp = curl_exec($ch);
-        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err  = curl_error($ch);
-        curl_close($ch);
-
-        logMsg("↪️ saldo.php: POST $url (HTTP $http)" . ($err ? " ERR=$err" : ""));
-        return [$http, $resp];
-    };
-
-    $saldoAntes = 0.0;
-    $payloadSaldo = ['clienteId' => (string)$clienteId];
-
-    // Tenta primeiro /api/crediario/saldo.php, depois /api/saldo.php
-    $tentativas = [
-        '/pdv_carmania/api/crediario/saldo.php',
-        '/pdv_carmania/api/saldo.php',
-    ];
-
-    foreach ($tentativas as $path) {
-        [$http, $resp] = $callSaldo($path, $payloadSaldo);
-        if ($http === 200 && $resp) {
-            $jsonSaldo = json_decode($resp, true);
-            if (!empty($jsonSaldo['ok']) && isset($jsonSaldo['saldoAtual'])) {
-                $saldoAntes = (float)$jsonSaldo['saldoAtual'];
-                logMsg("✅ Saldo obtido via $path -> R$ " . number_format($saldoAntes, 2, ',', '.'));
-                break;
-            } else {
-                logMsg("⚠️ Resposta inesperada de $path -> $resp");
-            }
-        } else {
-            logMsg("⚠️ Falha ao consultar $path (HTTP $http) -> $resp");
-        }
-    }
-
-    $novoSaldo = $saldoAntes + $totalFinal;
-
-    // Bloco visual do resumo do crediário (centralizado)
-    $reciboHtml .= "
-    <div style='
-      width:260px;
-      margin:10px auto;
-      font-family:monospace;
-      font-size:13px;
-      text-align:center;
-      background:#f9f9f9;
-      padding:8px;
-      border-radius:6px;
-      border:1px dashed #aaa;
-    '>
-      <p style='margin:3px 0;font-weight:bold;'>💳 Resumo do Crediário</p>
-      <table style='width:100%;font-size:12px;'>
-        <tr><td style='text-align:left;'>Saldo Anterior:</td><td style='text-align:right;'>R$ ".number_format($saldoAntes,2,',','.')."</td></tr>
-        <tr><td style='text-align:left;'>Compra Atual:</td><td style='text-align:right;'>R$ ".number_format($totalFinal,2,',','.')."</td></tr>
-        <tr><td colspan='2'><hr style='border:0;border-top:1px dashed #ccc;'></td></tr>
-        <tr><td style='text-align:left;'><b>Novo Saldo:</b></td><td style='text-align:right;color:#dc3545;'><b>R$ ".number_format($novoSaldo,2,',','.')."</b></td></tr>
-      </table>
-    </div>";
-
-    logMsg("💳 Saldo anterior: {$saldoAntes} | Compra: {$totalFinal} | Novo saldo: {$novoSaldo}");
-}
-
 
 echo json_encode([
     'ok'=>true,
