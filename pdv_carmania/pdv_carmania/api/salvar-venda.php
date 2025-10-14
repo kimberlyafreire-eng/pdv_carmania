@@ -342,25 +342,35 @@ foreach ($nomesFormas as $f) {
 }
 
 $reciboHtml = "
-<div id='recibo' style='
-  width:260px;
+<div id='recibo-wrapper' style='
+  width:100%;
+  min-height:100vh;
   margin:0 auto;
-  font-family:monospace;
-  font-size:13px;
-  text-align:center;
-  background:#fff;
-  padding:10px;
-  border-radius:8px;
-  box-shadow:0 0 5px rgba(0,0,0,0.1);
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding:16px 0;
+  box-sizing:border-box;
+  overflow-y:auto;
 '>
+  <div id='recibo' style='
+    width:240px;
+    max-width:100%;
+    font-family:monospace;
+    font-size:13px;
+    text-align:center;
+    background:#fff;
+    padding:16px 12px 20px;
+    box-sizing:border-box;
+  '>
   <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
 " . $atendenteHtml . "
   <p style='margin:2px 0;'>Pedido: <b>".($pedidoId ?? '-')."</b></p>
   <p style='margin:2px 0;'>Cliente: <b>".htmlspecialchars($clienteNome,ENT_QUOTES,'UTF-8')."</b></p>
-  <hr style='border:1px dashed #aaa; margin:6px 0;'>
-  
+  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
+
   <table style='width:100%;font-size:12px;margin-bottom:5px;'>$itensHtml</table>
-  <hr style='border:1px dashed #aaa; margin:6px 0;'>
+  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
   
   <table style='width:100%;font-size:12px;'>
     <tr><td style='text-align:left;'>Total Bruto</td><td style='text-align:right;'>R$ ".number_format($totalBruto,2,',','.')."</td></tr>";
@@ -371,18 +381,19 @@ if ($descontoAplicado>0) {
 }
 
 $reciboHtml .= "
-    <tr><td colspan='2'><hr style='border:0;border-top:1px dashed #ccc;'></td></tr>
+    <tr><td colspan='2'><hr style='border:0;border-top:1px solid #e0e0e0;'></td></tr>
     <tr><td style='text-align:left;'><b>Total Final</b></td><td style='text-align:right;'><b>R$ ".number_format($totalFinal,2,',','.')."</b></td></tr>
   </table>
 
-  <hr style='border:1px dashed #aaa; margin:6px 0;'>
+  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
   <p style='margin:3px 0; font-weight:bold;'>Pagamentos</p>
   <table style='width:100%;font-size:12px;'>$formasHtml</table>
-  <hr style='border:1px dashed #aaa; margin:6px 0;'>
-  
+  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
+
   <p style='margin:2px 0;'>Estoque: <b>".htmlspecialchars($deposito['nome'] ?? 'Não informado')."</b></p>
-  <hr style='border:1px dashed #aaa; margin:6px 0;'>
-  <p style='margin:5px 0; font-size:12px;'>Obrigado pela preferência!</p>
+  <hr style='border:0;border-top:1px solid #e0e0e0;margin:8px 0;'>
+  <p style='margin:5px 0; font-size:12px; color:#222;'>Obrigado pela preferência!</p>
+  </div>
 </div>";
 
 // 💳 Se for crediário, adiciona saldo
