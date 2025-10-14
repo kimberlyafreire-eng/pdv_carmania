@@ -57,7 +57,10 @@ try {
         }
 
         $valor = (float)$valor;
-        if ($valor <= 0) {
+        if ($valor < 0) {
+            throw new InvalidArgumentException('Valor inválido.');
+        }
+        if ($valor === 0.0 && $tipoSlug !== 'fechamento') {
             throw new InvalidArgumentException('Informe um valor maior que zero.');
         }
 

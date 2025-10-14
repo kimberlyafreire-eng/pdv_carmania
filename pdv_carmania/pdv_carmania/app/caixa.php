@@ -349,7 +349,7 @@ if (file_exists($dbFile)) {
       },
       fechamento: {
         titulo: 'Fechamento de Caixa',
-        mensagem: 'Informe o valor total encontrado no caixa para encerramento.',
+        mensagem: 'O valor sugerido considera as movimentações desde a última abertura.',
       },
       retirada: {
         titulo: 'Retirada',
@@ -364,6 +364,7 @@ if (file_exists($dbFile)) {
     let depositos = [];
     let caixaAtual = null;
     let tipoSelecionado = null;
+    let saldoFechamentoCalculado = null;
 
     function mostrarAlerta(tipo, mensagem) {
       const alerta = document.createElement('div');
@@ -427,8 +428,10 @@ if (file_exists($dbFile)) {
       }
 
       const linhas = movimentos.map(mov => {
-        const valor = mov.natureza < 0 ? -Math.abs(mov.valor) : Math.abs(mov.valor);
-        const classeValor = valor >= 0 ? 'saldo-positivo' : 'saldo-negativo';
+        const isFechamento = mov.tipoSlug === 'fechamento';
+        const valorAbsoluto = Math.abs(mov.valor);
+        const valor = isFechamento ? valorAbsoluto : (mov.natureza < 0 ? -valorAbsoluto : valorAbsoluto);
+        const classeValor = isFechamento ? 'text-body' : (valor >= 0 ? 'saldo-positivo' : 'saldo-negativo');
         const saldoClasse = mov.saldoResultante >= 0 ? 'saldo-positivo' : 'saldo-negativo';
         const dataFormatada = mov.dataHora ? dataHoraBR.format(new Date(mov.dataHora)) : '--';
         const usuario = mov.usuarioNome || '—';
@@ -497,6 +500,7 @@ if (file_exists($dbFile)) {
       const depositoId = selectDeposito.value;
       if (!depositoId) {
         caixaAtual = null;
+        saldoFechamentoCalculado = null;
         saldoAtualEl.textContent = formatarSaldo(0);
         atualizarStatus('Fechado');
         atualizadoEmEl.textContent = 'Atualizado em --';
@@ -550,6 +554,7 @@ if (file_exists($dbFile)) {
       resumoMensagemEl.textContent = `Caixa ${caixa.status.toLowerCase()} para o depósito ${caixa.nome}.`;
       montarTabelaMovimentacoes(movimentos || []);
       atualizarCards(caixa.status);
+      saldoFechamentoCalculado = typeof caixa.saldoCalculado === 'number' ? caixa.saldoCalculado : null;
     }
 
     function abrirModalOperacao(tipo) {
@@ -559,9 +564,30 @@ if (file_exists($dbFile)) {
       tipoSelecionado = tipo;
       const info = informacoesOperacoes[tipo] || { titulo: 'Registrar movimentação', mensagem: '' };
       modalTitulo.textContent = info.titulo;
-      inputValor.value = '';
       inputObs.value = '';
-      ajudaValor.textContent = info.mensagem || 'Informe o valor em reais. Use ponto para separar os centavos.';
+      inputValor.step = '0.01';
+
+      let mensagemAjuda = info.mensagem || 'Informe o valor em reais. Use ponto para separar os centavos.';
+      let valorSugestao = null;
+
+      if (tipo === 'fechamento') {
+        inputValor.min = '0';
+        const saldoReferencia = Number.isFinite(saldoFechamentoCalculado)
+          ? saldoFechamentoCalculado
+          : (typeof caixaAtual?.saldoAtual === 'number' ? caixaAtual.saldoAtual : 0);
+        valorSugestao = saldoReferencia;
+      } else {
+        inputValor.min = '0.01';
+      }
+
+      if (valorSugestao !== null) {
+        inputValor.value = valorSugestao.toFixed(2);
+        mensagemAjuda = `${mensagemAjuda} Valor calculado: ${formatarSaldo(valorSugestao)}.`;
+      } else {
+        inputValor.value = '';
+      }
+
+      ajudaValor.textContent = mensagemAjuda;
       modal.show();
       setTimeout(() => inputValor.focus(), 300);
     }
@@ -580,9 +606,13 @@ if (file_exists($dbFile)) {
         return;
       }
 
-      const valor = parseFloat(inputValor.value);
-      if (!valor || valor <= 0) {
+      const valor = Number.parseFloat(inputValor.value);
+      if (Number.isNaN(valor) || valor < 0) {
         mostrarAlerta('warning', 'Informe um valor válido para a movimentação.');
+        return;
+      }
+      if (tipoSelecionado !== 'fechamento' && valor <= 0) {
+        mostrarAlerta('warning', 'Informe um valor maior que zero para a movimentação.');
         return;
       }
 
