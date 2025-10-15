@@ -84,6 +84,7 @@ function seedCaixaTipos(SQLite3 $db): void
         ['slug' => 'abastecimento', 'nome' => 'Abastecimento', 'natureza' => 1],
         ['slug' => 'troco', 'nome' => 'Troco', 'natureza' => -1],
         ['slug' => 'venda', 'nome' => 'Venda', 'natureza' => 1],
+        ['slug' => 'rcbto-crediario', 'nome' => 'Rcbto Crediário', 'natureza' => 1],
     ];
 
     $insert = $db->prepare('INSERT OR IGNORE INTO caixa_tipos_movimentacao (slug, nome, natureza) VALUES (?, ?, ?)');
