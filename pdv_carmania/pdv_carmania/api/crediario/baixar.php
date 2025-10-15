@@ -1,7 +1,6 @@
 <?php
+require_once dirname(__DIR__) . '/../session.php';
 header('Content-Type: application/json; charset=utf-8');
-
-session_start();
 $usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']) : '';
 
 // ✅ Inclui o helper do token centralizado

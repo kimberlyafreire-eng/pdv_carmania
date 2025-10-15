@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . '/../session.php';
 
 // ⚙️ Proteção simples (caso queira ativar depois)
 // if (!isset($_SESSION['usuario']) || $_SESSION['nivel'] !== 'admin') {
