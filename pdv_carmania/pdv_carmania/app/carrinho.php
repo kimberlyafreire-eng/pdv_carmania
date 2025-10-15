@@ -205,14 +205,6 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       min-width: 120px;
     }
 
-    #clienteFooterBusca {
-      width: 100%;
-    }
-
-    #clienteFooterBusca .cliente-footer-actions {
-      width: 100%;
-    }
-
     @media (max-width: 992px) {
       .quantidade-input,
       .preco-input {
@@ -339,21 +331,6 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         flex: 1 1 48%;
         min-width: unset;
       }
-
-      #clienteFooterBusca {
-        align-items: stretch !important;
-      }
-
-      #clienteFooterBusca .cliente-footer-actions {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.75rem;
-      }
-
-      #clienteFooterBusca .cliente-footer-actions .btn,
-      #clienteFooterBusca #btnNovoCliente {
-        width: 100%;
-      }
     }
   </style>
 </head>
@@ -414,48 +391,13 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div id="clienteBuscaSection">
-            <input type="text" id="clienteBusca" class="form-control" placeholder="Digite o nome do cliente">
-            <div id="listaClientes" class="list-group mt-2"></div>
-          </div>
-
-          <div id="clienteCadastroSection" class="d-none">
-            <form id="formNovoCliente" class="needs-validation" novalidate>
-              <div class="mb-3">
-                <label for="novoClienteNome" class="form-label">Nome Completo</label>
-                <input type="text" id="novoClienteNome" class="form-control" required>
-              </div>
-              <div class="mb-3">
-                <label for="novoClienteTipo" class="form-label">Tipo de Pessoa</label>
-                <select id="novoClienteTipo" class="form-select" required>
-                  <option value="" selected>Selecione</option>
-                  <option value="F">Física</option>
-                  <option value="J">Jurídica</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="novoClienteDocumento" class="form-label">CPF/CNPJ</label>
-                <input type="text" id="novoClienteDocumento" class="form-control" required>
-              </div>
-              <div class="mb-3">
-                <label for="novoClienteCelular" class="form-label">Celular</label>
-                <input type="text" id="novoClienteCelular" class="form-control" required>
-              </div>
-              <div id="novoClienteErro" class="alert alert-danger d-none"></div>
-            </form>
-          </div>
+          <input type="text" id="clienteBusca" class="form-control" placeholder="Digite o nome do cliente">
+          <div id="listaClientes" class="list-group mt-2"></div>
         </div>
-        <div class="modal-footer flex-column align-items-stretch gap-2" id="clienteFooterBusca">
-          <button class="btn btn-outline-primary w-100" id="btnNovoCliente">Novo Cliente</button>
-          <div class="d-flex flex-wrap gap-2 justify-content-end w-100 cliente-footer-actions">
-            <button class="btn btn-danger" onclick="limparCliente()">Limpar</button>
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button class="btn btn-primary" onclick="confirmarCliente()">OK</button>
-          </div>
-        </div>
-        <div class="modal-footer flex-wrap gap-2 justify-content-end d-none" id="clienteFooterCadastro">
-          <button class="btn btn-outline-secondary" id="btnCancelarCadastroCliente">Cancelar</button>
-          <button class="btn btn-success" id="btnCadastrarCliente">Cadastrar</button>
+        <div class="modal-footer">
+          <button class="btn btn-danger" onclick="limparCliente()">Limpar</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-primary" onclick="confirmarCliente()">OK</button>
         </div>
       </div>
     </div>
@@ -560,88 +502,23 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     // ======= CLIENTES =======
     // ========================
     async function carregarClientes() {
-      const normalizarClientes = (payload) => {
-        if (payload && Array.isArray(payload.data)) {
-          return payload.data;
-        }
-        return Array.isArray(payload) ? payload : [];
-      };
-
-      const apiUrl = `../api/clientes.php?nocache=${Date.now()}`;
-
       try {
-        const resposta = await fetch(apiUrl, { cache: 'no-store' });
-        if (!resposta.ok) {
-          throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
-        }
-        const texto = await resposta.text();
-        if (!texto) {
-          throw new Error('Resposta vazia ao carregar clientes.');
-        }
-        let json;
-        try {
-          json = JSON.parse(texto);
-        } catch (erro) {
-          throw new Error('JSON inválido ao carregar clientes.');
-        }
-        clientesLista = normalizarClientes(json);
-      } catch (erroApi) {
-        console.error('Não foi possível carregar a lista de clientes.', erroApi);
+        const res = await fetch("../cache/clientes-cache.json?nocache=" + Date.now());
+        const json = await res.json();
+        clientesLista = json.data || json;
+      } catch {
         clientesLista = [];
       }
     }
 
-    const clienteBuscaSection = document.getElementById("clienteBuscaSection");
-    const clienteCadastroSection = document.getElementById("clienteCadastroSection");
-    const footerBusca = document.getElementById("clienteFooterBusca");
-    const footerCadastro = document.getElementById("clienteFooterCadastro");
-    const erroNovoCliente = document.getElementById("novoClienteErro");
-    const btnCadastrarCliente = document.getElementById("btnCadastrarCliente");
-    const btnNovoCliente = document.getElementById("btnNovoCliente");
-    const btnCancelarCadastroCliente = document.getElementById("btnCancelarCadastroCliente");
-    const formNovoCliente = document.getElementById("formNovoCliente");
-
-    function mostrarErroNovoCliente(mensagem) {
-      if (!erroNovoCliente) return;
-      if (!mensagem) {
-        erroNovoCliente.classList.add("d-none");
-        erroNovoCliente.textContent = "";
-      } else {
-        erroNovoCliente.textContent = mensagem;
-        erroNovoCliente.classList.remove("d-none");
-      }
-    }
-
-    function alternarInterfaceCliente(modo) {
-      const buscando = modo === "buscar";
-      clienteBuscaSection.classList.toggle("d-none", !buscando);
-      clienteCadastroSection.classList.toggle("d-none", buscando);
-      footerBusca.classList.toggle("d-none", !buscando);
-      footerCadastro.classList.toggle("d-none", buscando);
-      mostrarErroNovoCliente("");
-
-      if (buscando) {
-        if (formNovoCliente) formNovoCliente.reset();
-        const campoBusca = document.getElementById("clienteBusca");
-        if (campoBusca) campoBusca.focus();
-      } else {
-        const campoNome = document.getElementById("novoClienteNome");
-        if (campoNome) campoNome.focus();
-      }
-    }
-
     function abrirModalCliente() {
-      const campoBusca = document.getElementById("clienteBusca");
-      campoBusca.value = "";
-      delete campoBusca.dataset.id;
+      document.getElementById("clienteBusca").value = "";
       document.getElementById("listaClientes").innerHTML = "";
-      alternarInterfaceCliente("buscar");
       new bootstrap.Modal(document.getElementById("modalCliente")).show();
     }
 
     document.addEventListener("input", (e) => {
       if (e.target.id !== "clienteBusca") return;
-      if (clienteBuscaSection.classList.contains("d-none")) return;
       const busca = e.target.value.toLowerCase();
       const lista = document.getElementById("listaClientes");
       lista.innerHTML = "";
@@ -674,94 +551,6 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       localStorage.removeItem("clienteSelecionado");
       atualizarBotaoCliente();
       bootstrap.Modal.getInstance(document.getElementById("modalCliente")).hide();
-    }
-
-    async function cadastrarNovoCliente() {
-      const nome = document.getElementById("novoClienteNome").value.trim();
-      const tipo = document.getElementById("novoClienteTipo").value.trim();
-      const documento = document.getElementById("novoClienteDocumento").value.replace(/\D+/g, "");
-      const celular = document.getElementById("novoClienteCelular").value.trim();
-
-      if (!nome || !tipo || !documento || !celular) {
-        mostrarErroNovoCliente("Preencha todos os campos obrigatórios antes de cadastrar.");
-        return;
-      }
-
-      mostrarErroNovoCliente("");
-      btnCadastrarCliente.disabled = true;
-      const textoOriginal = btnCadastrarCliente.textContent;
-      btnCadastrarCliente.textContent = "Cadastrando...";
-
-      try {
-        const resposta = await fetch("../api/salvar-cliente.php", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nome, tipoPessoa: tipo, documento, celular })
-        });
-
-        const payload = await resposta.json().catch(() => null);
-
-        if (!resposta.ok || !payload || !payload.sucesso || !payload.cliente) {
-          const erroMensagem = (payload && (payload.erro || payload.mensagem))
-            ? payload.erro || payload.mensagem
-            : "Não foi possível cadastrar o cliente. Tente novamente.";
-          mostrarErroNovoCliente(erroMensagem);
-          return;
-        }
-
-        const cliente = payload.cliente;
-        if (cliente && cliente.id && cliente.nome) {
-          // Atualiza a lista local para incluir o novo cliente imediatamente.
-          const idString = String(cliente.id);
-          clientesLista = clientesLista.filter(c => String(c.id) !== idString);
-          clientesLista.unshift({ ...cliente, id: cliente.id, nome: cliente.nome });
-
-          clienteSelecionado = { id: idString, nome: cliente.nome };
-          localStorage.setItem("clienteSelecionado", JSON.stringify(clienteSelecionado));
-          atualizarBotaoCliente();
-          const campoBusca = document.getElementById("clienteBusca");
-          if (campoBusca) {
-            campoBusca.value = cliente.nome;
-            campoBusca.dataset.id = idString;
-          }
-        }
-
-        cancelarCadastroCliente();
-        const modal = bootstrap.Modal.getInstance(document.getElementById("modalCliente"));
-        if (modal) modal.hide();
-      } catch (erro) {
-        console.error("Erro ao cadastrar cliente:", erro);
-        mostrarErroNovoCliente("Erro de comunicação ao cadastrar o cliente. Verifique sua conexão e tente novamente.");
-      } finally {
-        btnCadastrarCliente.disabled = false;
-        btnCadastrarCliente.textContent = textoOriginal;
-      }
-    }
-
-    function cancelarCadastroCliente() {
-      mostrarErroNovoCliente("");
-      if (formNovoCliente) formNovoCliente.reset();
-      alternarInterfaceCliente("buscar");
-    }
-
-    if (btnNovoCliente) {
-      btnNovoCliente.addEventListener("click", () => {
-        alternarInterfaceCliente("cadastrar");
-      });
-    }
-
-    if (btnCancelarCadastroCliente) {
-      btnCancelarCadastroCliente.addEventListener("click", (evento) => {
-        evento.preventDefault();
-        cancelarCadastroCliente();
-      });
-    }
-
-    if (btnCadastrarCliente) {
-      btnCadastrarCliente.addEventListener("click", (evento) => {
-        evento.preventDefault();
-        cadastrarNovoCliente();
-      });
     }
 
     function atualizarBotaoCliente() {
