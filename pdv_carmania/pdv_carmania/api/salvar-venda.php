@@ -7,6 +7,7 @@ $usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']
 // ✅ Inclui o helper centralizado do token
 require_once __DIR__ . '/lib/token-helper.php';
 require_once __DIR__ . '/lib/caixa-helper.php';
+require_once __DIR__ . '/lib/vendas-helper.php';
 
 // ⚙️ Caminhos e configs
 $logDir  = __DIR__ . '/../logs';
@@ -448,6 +449,31 @@ if ($trocoTotalCalculado > 0.01) {
         }
     } else {
         logMsg('⚠️ Troco identificado, porém sem depósito válido para registrar no caixa.');
+    }
+}
+
+// 🗃️ Persiste a venda no banco local
+if ($pedidoId) {
+    $situacaoRegistrada = (int) ($rj['data']['situacao']['id'] ?? 9);
+    $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+
+    try {
+        registrarVendaLocal([
+            'id' => (int) $pedidoId,
+            'data_hora' => date('Y-m-d H:i:s'),
+            'contato_id' => $clienteId ? (int) $clienteId : null,
+            'contato_nome' => $clienteNome,
+            'usuario_login' => $usuarioResponsavel,
+            'usuario_nome' => $usuarioRecibo,
+            'deposito_id' => $depositoIdCaixa ? (int) $depositoIdCaixa : null,
+            'deposito_nome' => $depositoNome,
+            'situacao_id' => $situacaoRegistrada > 0 ? $situacaoRegistrada : 9,
+            'valor_total' => $totalFinal,
+            'valor_desconto' => $descontoAplicado,
+        ], $pagamentos, $carrinho);
+        logMsg('💾 Venda registrada no banco local.');
+    } catch (Throwable $e) {
+        logMsg('⚠️ Falha ao registrar venda localmente: ' . $e->getMessage());
     }
 }
 
