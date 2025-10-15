@@ -80,10 +80,52 @@ if (!isset($_SESSION['usuario'])) {
     let clientesLista = [];
     let clienteSelecionado = null;
 
-    // Carregar clientes do cache
-    fetch("../cache/clientes-cache.json?nocache=" + Date.now())
-      .then(res => res.json())
-      .then(json => { clientesLista = json.data || json; });
+    async function carregarClientes() {
+      const normalizarClientes = (payload) => {
+        if (payload && Array.isArray(payload.data)) {
+          return payload.data;
+        }
+        return Array.isArray(payload) ? payload : [];
+      };
+
+      const buscarClientes = async (url) => {
+        const resposta = await fetch(url);
+        if (!resposta.ok) {
+          throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
+        }
+        const texto = await resposta.text();
+        if (!texto) {
+          throw new Error('Resposta vazia ao carregar clientes.');
+        }
+        let json;
+        try {
+          json = JSON.parse(texto);
+        } catch (erro) {
+          throw new Error('JSON inválido ao carregar clientes.');
+        }
+        return normalizarClientes(json);
+      };
+
+      const cacheUrl = `../cache/clientes-cache.json?nocache=${Date.now()}`;
+      const apiUrl = `../api/clientes.php?nocache=${Date.now()}`;
+
+      try {
+        clientesLista = await buscarClientes(cacheUrl);
+        if (!clientesLista.length) {
+          clientesLista = await buscarClientes(apiUrl);
+        }
+      } catch (erroCache) {
+        console.warn('Falha ao ler cache de clientes. Tentando carregar via API.', erroCache);
+        try {
+          clientesLista = await buscarClientes(apiUrl);
+        } catch (erroApi) {
+          console.error('Não foi possível carregar a lista de clientes.', erroCache, erroApi);
+          clientesLista = [];
+        }
+      }
+    }
+
+    carregarClientes();
 
     // Autocomplete
     const inputBusca = document.getElementById("clienteBusca");

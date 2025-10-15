@@ -203,7 +203,15 @@ if (is_array($clienteAtualizado)) {
 
     $jsonFinal = json_encode($clientes, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     if ($jsonFinal !== false) {
-        file_put_contents($cacheClientes, $jsonFinal, LOCK_EX);
+        $tmpFile = $cacheClientes . '.tmp';
+        if (file_put_contents($tmpFile, $jsonFinal, LOCK_EX) !== false) {
+            if (!@rename($tmpFile, $cacheClientes)) {
+                file_put_contents($cacheClientes, $jsonFinal, LOCK_EX);
+                @unlink($tmpFile);
+            }
+        } else {
+            @unlink($tmpFile);
+        }
     }
 }
 
