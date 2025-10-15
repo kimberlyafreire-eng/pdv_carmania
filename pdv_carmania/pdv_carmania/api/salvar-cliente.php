@@ -11,6 +11,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/lib/token-helper.php';
 require_once __DIR__ . '/lib/contatos-helper.php';
+require_once __DIR__ . '/lib/clientes-db.php';
 
 $dadosEntrada = json_decode(file_get_contents('php://input'), true);
 if (!is_array($dadosEntrada)) {
@@ -212,6 +213,14 @@ if (is_array($clienteAtualizado)) {
         } else {
             @unlink($tmpFile);
         }
+    }
+
+    try {
+        $db = getClientesDb();
+        upsertCliente($db, $clienteAtualizado);
+        $db->close();
+    } catch (Throwable $e) {
+        error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
     }
 }
 
