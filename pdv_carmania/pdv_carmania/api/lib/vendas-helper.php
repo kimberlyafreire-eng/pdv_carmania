@@ -132,26 +132,28 @@ function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens)
             $usuarioNome = $usuarioLogin;
         }
 
-        $sql = 'INSERT INTO vendas (
-                    id, data_hora, contato_id, contato_nome, usuario_id, usuario_login, usuario_nome,
-                    deposito_id, deposito_nome, situacao_id, valor_total, valor_desconto, atualizado_em
-                ) VALUES (
-                    :id, :data_hora, :contato_id, :contato_nome, :usuario_id, :usuario_login, :usuario_nome,
-                    :deposito_id, :deposito_nome, :situacao_id, :valor_total, :valor_desconto, CURRENT_TIMESTAMP
-                )
-                ON CONFLICT(id) DO UPDATE SET
-                    data_hora = excluded.data_hora,
-                    contato_id = excluded.contato_id,
-                    contato_nome = excluded.contato_nome,
-                    usuario_id = excluded.usuario_id,
-                    usuario_login = excluded.usuario_login,
-                    usuario_nome = excluded.usuario_nome,
-                    deposito_id = excluded.deposito_id,
-                    deposito_nome = excluded.deposito_nome,
-                    situacao_id = excluded.situacao_id,
-                    valor_total = excluded.valor_total,
-                    valor_desconto = excluded.valor_desconto,
-                    atualizado_em = excluded.atualizado_em';
+        $sql = <<<'SQL'
+INSERT INTO vendas (
+    id, data_hora, contato_id, contato_nome, usuario_id, usuario_login, usuario_nome,
+    deposito_id, deposito_nome, situacao_id, valor_total, valor_desconto, atualizado_em
+) VALUES (
+    :id, :data_hora, :contato_id, :contato_nome, :usuario_id, :usuario_login, :usuario_nome,
+    :deposito_id, :deposito_nome, :situacao_id, :valor_total, :valor_desconto, CURRENT_TIMESTAMP
+)
+ON CONFLICT(id) DO UPDATE SET
+    data_hora = excluded.data_hora,
+    contato_id = excluded.contato_id,
+    contato_nome = excluded.contato_nome,
+    usuario_id = excluded.usuario_id,
+    usuario_login = excluded.usuario_login,
+    usuario_nome = excluded.usuario_nome,
+    deposito_id = excluded.deposito_id,
+    deposito_nome = excluded.deposito_nome,
+    situacao_id = excluded.situacao_id,
+    valor_total = excluded.valor_total,
+    valor_desconto = excluded.valor_desconto,
+    atualizado_em = excluded.atualizado_em
+SQL;
 
         $stmt = $db->prepare($sql);
         $stmt->bindValue(':id', $vendaId, SQLITE3_INTEGER);
