@@ -371,6 +371,30 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     const cliente = JSON.parse(localStorage.getItem("clienteRecebimento") || "null");
     const saldoData = JSON.parse(localStorage.getItem("saldoCrediario") || "null");
 
+    const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
+    const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
+
+    function recuperarDeposito(chave) {
+      const bruto = localStorage.getItem(chave);
+      if (!bruto) return null;
+      try {
+        const parsed = JSON.parse(bruto);
+        if (parsed && parsed.id) return parsed;
+      } catch (err) {
+        console.warn("Cache de depósito inválido ao carregar pagamento do crediário, ignorando.", err);
+      }
+      localStorage.removeItem(chave);
+      return null;
+    }
+
+    let depositoSelecionado = recuperarDeposito(depositoStorageKey);
+    if (!depositoSelecionado && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
+      depositoSelecionado = recuperarDeposito(LEGACY_DEPOSITO_KEY);
+      if (depositoSelecionado) {
+        localStorage.removeItem(LEGACY_DEPOSITO_KEY);
+      }
+    }
+
     if (!cliente || !saldoData) {
       alert("Informações do cliente não encontradas. Retornando...");
       window.location.href = "receber.php";
@@ -468,7 +492,8 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
         clienteNome: cliente.nome,
         titulos: saldoData.titulos,
         pagamentos: pagamentos,
-        usuarioLogado: usuarioLogado || null
+        usuarioLogado: usuarioLogado || null,
+        deposito: depositoSelecionado || null
       };
 
       try {

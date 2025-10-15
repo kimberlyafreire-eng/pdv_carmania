@@ -5,6 +5,7 @@ $usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']
 
 // ✅ Inclui o helper do token centralizado
 require_once __DIR__ . '/../lib/token-helper.php';
+require_once __DIR__ . '/../lib/caixa-helper.php';
 
 $logDir  = __DIR__ . '/../../../logs';
 $logFile = "$logDir/baixar-crediario.log";
@@ -24,6 +25,7 @@ $clienteId      = $input['clienteId'] ?? null;
 $clienteNome    = $input['clienteNome'] ?? '';
 $titulos        = $input['titulos'] ?? [];
 $pagamentos     = $input['pagamentos'] ?? [];
+$deposito       = $input['deposito'] ?? null;
 $usuarioPayload = isset($input['usuarioLogado']) ? trim((string)$input['usuarioLogado']) : '';
 $usuarioRecibo  = $usuarioPayload !== '' ? $usuarioPayload : $usuarioSessao;
 $usuarioRecibo  = trim($usuarioRecibo);
@@ -31,6 +33,25 @@ if ($usuarioRecibo !== '') {
     $usuarioRecibo = mb_substr($usuarioRecibo, 0, 80);
 } else {
     $usuarioRecibo = null;
+}
+
+$depositoId = null;
+$depositoNome = '';
+if (is_array($deposito)) {
+    $depositoId = $deposito['id'] ?? null;
+    $depositoNome = (string)($deposito['nome'] ?? '');
+}
+if ($depositoId === null && isset($input['depositoId'])) {
+    $depositoId = $input['depositoId'];
+}
+if (is_string($depositoId)) {
+    $depositoId = trim($depositoId);
+}
+
+if ($depositoId !== null && $depositoId !== '') {
+    $depositoId = (string) $depositoId;
+} else {
+    $depositoId = null;
 }
 
 if (!$clienteId || empty($titulos) || empty($pagamentos)) {
@@ -119,6 +140,32 @@ function normalize($str){
     return trim(preg_replace('/[^A-Z0-9 ]/','',$str));
 }
 
+function pagamentoEhDinheiro(array $pagamento): bool {
+    $idsDinheiro = [
+        '2009802',
+        '8126950',
+    ];
+
+    if (isset($pagamento['id'])) {
+        $idValor = trim((string) $pagamento['id']);
+        if ($idValor !== '') {
+            if (in_array($idValor, $idsDinheiro, true)) {
+                return true;
+            }
+            if (in_array((string) ((int) $idValor), $idsDinheiro, true)) {
+                return true;
+            }
+        }
+    }
+
+    $nome = strtolower(trim((string) ($pagamento['forma'] ?? $pagamento['nome'] ?? '')));
+    if ($nome !== '' && mb_stripos($nome, 'dinheiro') !== false) {
+        return true;
+    }
+
+    return false;
+}
+
 // --- Calcula valores recebidos
 $totalRecebido = 0; $formas = [];
 foreach ($pagamentos as $p) {
@@ -126,7 +173,13 @@ foreach ($pagamentos as $p) {
     $nome  = $p['nome'] ?? $p['forma'] ?? '';
     if ($valor <= 0 || !$nome) continue;
     $totalRecebido += $valor;
-    $formas[] = ['nome' => $nome, 'valor' => $valor];
+    $formas[] = [
+        'nome' => $nome,
+        'valor' => $valor,
+        'valor_original' => $valor,
+        'is_dinheiro' => pagamentoEhDinheiro($p),
+        'id' => $p['id'] ?? null,
+    ];
 }
 if ($totalRecebido <= 0) die(json_encode(['erro'=>'Nenhum valor recebido']));
 
@@ -182,13 +235,49 @@ foreach ($titulos as &$t) {
         $res = bling_request('POST', "contas/receber/{$idTitulo}/baixar", $payload);
         $ok = $res['http'] >= 200 && $res['http'] < 300;
         logMsg(($ok?'✅':'❌')." Baixa título {$idTitulo} valor={$valorUsar} forma={$pf['nome']} catId={$catId} contaId={$contaId}");
-
         if ($valorRestante <= 0) break;
     }
+    unset($pf);
     if ($valorRestante <= 0) break;
 }
+unset($t);
+
+$valorDinheiroRegistrado = 0.0;
+foreach ($formas as $pfForma) {
+    if (!empty($pfForma['is_dinheiro'])) {
+        $orig = isset($pfForma['valor_original']) ? (float) $pfForma['valor_original'] : 0.0;
+        $restante = isset($pfForma['valor']) ? (float) $pfForma['valor'] : 0.0;
+        $valorDinheiroRegistrado += max(0, $orig - $restante);
+    }
+}
+$valorDinheiroRegistrado = round($valorDinheiroRegistrado, 2);
 
 $totalDepois = max(0, $totalAntes - $totalRecebido);
+
+if ($valorDinheiroRegistrado > 0.009) {
+    $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+    if ($depositoId) {
+        $observacaoCaixa = 'Recebimento crediário';
+        if ($clienteNome !== '') {
+            $observacaoCaixa .= ' - ' . $clienteNome;
+        }
+        try {
+            registrarMovimentacaoCaixa(
+                (string) $depositoId,
+                $depositoNome,
+                'rcbto-crediario',
+                $valorDinheiroRegistrado,
+                $observacaoCaixa,
+                $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
+            );
+            logMsg("💰 Recebimento em dinheiro registrado no caixa do depósito {$depositoId}: R$ {$valorDinheiroRegistrado}");
+        } catch (Throwable $e) {
+            logMsg('⚠️ Falha ao registrar recebimento em dinheiro no caixa: ' . $e->getMessage());
+        }
+    } else {
+        logMsg('ℹ️ Recebimento em dinheiro identificado, porém sem depósito válido para registrar no caixa.');
+    }
+}
 
 // --- Gera Recibo
 $atendenteHtml = '';
