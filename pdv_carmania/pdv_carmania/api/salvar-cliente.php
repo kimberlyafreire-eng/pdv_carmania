@@ -222,6 +222,16 @@ if (is_array($clienteAtualizado)) {
     } catch (Throwable $e) {
         error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
     }
+
+    // Agenda a atualização completa do cache de clientes para rodar em background.
+    try {
+        $refreshUrl = buildClientesRefreshUrl();
+        if ($refreshUrl !== null) {
+            scheduleClientesRefresh($refreshUrl, session_name(), session_id());
+        }
+    } catch (Throwable $e) {
+        error_log('[salvar-cliente.php] Erro ao preparar atualização do cache de clientes: ' . $e->getMessage());
+    }
 }
 
 $mensagem = $contatoId ? 'Cliente atualizado com sucesso!' : 'Cliente cadastrado com sucesso!';
@@ -231,3 +241,59 @@ echo json_encode([
     'mensagem' => $mensagem,
     'cliente' => $clienteAtualizado,
 ]);
+
+session_write_close();
+
+if (function_exists('fastcgi_finish_request')) {
+    // Libera a resposta para o cliente enquanto a atualização roda no shutdown handler.
+    fastcgi_finish_request();
+}
+
+/**
+ * Calcula a URL do endpoint responsável por reconstruir o cache de clientes.
+ */
+function buildClientesRefreshUrl(): ?string
+{
+    $isHttps = !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off';
+    $scheme = $isHttps ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') {
+        return null;
+    }
+
+    $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
+    $path = ($basePath === '' || $basePath === '.') ? '/clientes.php' : $basePath . '/clientes.php';
+
+    return sprintf('%s://%s%s?refresh=1', $scheme, $host, $path);
+}
+
+/**
+ * Registra uma chamada assíncrona para atualizar o cache de clientes.
+ */
+function scheduleClientesRefresh(string $url, string $sessionName, string $sessionId): void
+{
+    $cookieHeader = sprintf('Cookie: %s=%s\r\n', $sessionName, $sessionId);
+
+    register_shutdown_function(
+        static function (string $url, string $cookieHeader): void {
+            try {
+                $context = stream_context_create([
+                    'http' => [
+                        'method' => 'GET',
+                        'header' => $cookieHeader,
+                        'timeout' => 5,
+                        'ignore_errors' => true,
+                    ],
+                ]);
+
+                if (@file_get_contents($url, false, $context) === false) {
+                    error_log('[salvar-cliente.php] Falha ao solicitar atualização do cache de clientes em ' . $url);
+                }
+            } catch (Throwable $e) {
+                error_log('[salvar-cliente.php] Erro ao chamar clientes.php: ' . $e->getMessage());
+            }
+        },
+        $url,
+        $cookieHeader
+    );
+}
