@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . '/../session.php';
 if (!isset($_SESSION['usuario'])) {
     http_response_code(403);
     header('Content-Type: application/json; charset=utf-8');

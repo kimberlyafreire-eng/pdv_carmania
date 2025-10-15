@@ -1,7 +1,6 @@
 <?php
+require_once __DIR__ . '/../session.php';
 header('Content-Type: application/json; charset=utf-8');
-
-session_start();
 if (!isset($_SESSION['usuario'])) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'erro' => 'Não autorizado']);
