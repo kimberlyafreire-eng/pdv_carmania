@@ -205,6 +205,14 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       min-width: 120px;
     }
 
+    #clienteFooterBusca {
+      width: 100%;
+    }
+
+    #clienteFooterBusca .cliente-footer-actions {
+      width: 100%;
+    }
+
     @media (max-width: 992px) {
       .quantidade-input,
       .preco-input {
@@ -331,6 +339,21 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         flex: 1 1 48%;
         min-width: unset;
       }
+
+      #clienteFooterBusca {
+        align-items: stretch !important;
+      }
+
+      #clienteFooterBusca .cliente-footer-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+      }
+
+      #clienteFooterBusca .cliente-footer-actions .btn,
+      #clienteFooterBusca #btnNovoCliente {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -424,7 +447,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         </div>
         <div class="modal-footer flex-column align-items-stretch gap-2" id="clienteFooterBusca">
           <button class="btn btn-outline-primary w-100" id="btnNovoCliente">Novo Cliente</button>
-          <div class="d-flex flex-wrap gap-2 justify-content-end w-100">
+          <div class="d-flex flex-wrap gap-2 justify-content-end w-100 cliente-footer-actions">
             <button class="btn btn-danger" onclick="limparCliente()">Limpar</button>
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
             <button class="btn btn-primary" onclick="confirmarCliente()">OK</button>
