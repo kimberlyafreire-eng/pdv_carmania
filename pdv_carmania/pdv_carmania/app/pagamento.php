@@ -317,7 +317,7 @@ if ($usuarioLogado) {
 
   <!-- Barra superior -->
   <nav class="navbar navbar-dark navbar-custom px-3">
-    <button class="btn btn-light" onclick="voltar()">⬅ Carrinho</button>
+    <button class="btn btn-light" onclick="window.location.href='index.php'">⬅ VENDER</button>
     <span class="navbar-text text-white fw-bold">Pagamento</span>
     <div></div>
   </nav>
@@ -401,6 +401,10 @@ if ($usuarioLogado) {
     const fmt = (n) => "R$ " + (Number(n)||0).toFixed(2);
     const toNum = (v) => parseFloat((v ?? 0)) || 0;
 
+    const telaPagamentoEl = document.getElementById("telaPagamento");
+    const reciboContainerEl = document.getElementById("reciboContainer");
+    const btnConcluirEl = document.getElementById("btnConcluir");
+
     const vendedorId = window.VENDEDOR_ID || null;
     const dadosVenda = JSON.parse(localStorage.getItem("dadosVenda") || "null");
     let carrinho = [], clienteSelecionado = null, descontoValor = 0, descontoPercentual = 0, totalVenda = 0;
@@ -430,7 +434,7 @@ if ($usuarioLogado) {
       return nome.includes('dinheiro') || id === '2009802';
     }
 
-    function voltar(){ window.location.href = "carrinho.php"; }
+    function voltar(){ window.location.href = "index.php"; }
 
     function selecionarForma(nome, id){
       formaSelecionada = { nome, id };
@@ -561,9 +565,28 @@ if ($usuarioLogado) {
 
     function calcularFaltando(){ return Math.max(0,totalVenda-pagamentos.reduce((s,p)=>s+toNum(p.valor),0)); }
 
+    function mostrarProcessandoRecibo(){
+      telaPagamentoEl.style.display = "none";
+      reciboContainerEl.classList.add("ativo");
+      reciboContainerEl.innerHTML = `
+        <div class="recibo-area flex-column text-center align-items-center">
+          <div class="spinner-border text-danger mb-3" role="status"></div>
+          <h4 class="fw-bold text-danger mb-0">Aguarde Gerando Recibo</h4>
+        </div>`;
+    }
+
+    function restaurarTelaPagamento(){
+      reciboContainerEl.classList.remove("ativo");
+      reciboContainerEl.innerHTML = "";
+      telaPagamentoEl.style.display = "";
+    }
+
     async function concluirVenda(){
       if (!clienteSelecionado?.id) return alert("Cliente não selecionado.");
       if (!carrinho.length) return alert("Carrinho vazio.");
+
+      btnConcluirEl.disabled = true;
+      mostrarProcessandoRecibo();
 
         // 🔹 Recupera também o depósito selecionado salvo no localStorage
         const usuarioLogado = window.USUARIO_LOGADO || null;
@@ -610,24 +633,29 @@ if ($usuarioLogado) {
           body:JSON.stringify(payload)
         });
         const data=await res.json();
-        if(!res.ok||!data.ok) return alert('Erro: '+(data.erro||JSON.stringify(data)));
+        if(!res.ok||!data.ok) throw new Error(data?.erro || (Array.isArray(data) ? JSON.stringify(data) : 'Falha ao salvar venda.'));
 
         localStorage.clear();
-        document.getElementById("telaPagamento").style.display = "none";
-        const reciboContainer = document.getElementById("reciboContainer");
-        reciboContainer.classList.add("ativo");
-        reciboContainer.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
+        reciboContainerEl.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
 
         gerarImagemRecibo().then(()=>{
-          reciboContainer.innerHTML += `
+          reciboContainerEl.insertAdjacentHTML("beforeend", `
             <div class="recibo-acoes">
               <button class="btn btn-primary" onclick="imprimirRecibo()">🖨 Imprimir</button>
               <button class="btn btn-secondary" onclick="copiarRecibo()">📋 Copiar</button>
               <button class="btn btn-success" onclick="compartilharRecibo()">📤 Compartilhar</button>
               <button class="btn btn-dark" onclick="window.location.href='index.php'">⬅ Nova Venda</button>
-            </div>`;
+            </div>
+            <div class="alert alert-success mt-3 text-center fw-bold text-uppercase">VENDA CONCLUÍDA COM SUCESSO</div>`);
         });
-      }catch(err){ console.error(err); alert('Erro inesperado.'); }
+      }catch(err){
+        console.error(err);
+        alert('Erro: '+(err?.message || 'Erro inesperado.'));
+        restaurarTelaPagamento();
+        atualizarLista();
+      } finally {
+        btnConcluirEl.disabled = calcularFaltando() > 0.001;
+      }
     }
 
     async function gerarImagemRecibo(){
@@ -635,17 +663,36 @@ if ($usuarioLogado) {
       const canvas=await html2canvas(recibo);
       const img=document.createElement("img");
       img.id="reciboImg"; img.src=canvas.toDataURL("image/png");
+      img.dataset.htmlRecibo=recibo.outerHTML;
       recibo.replaceWith(img);
     }
 
     function imprimirRecibo(){ window.print(); }
 
-    function copiarRecibo(){
-      const img=document.getElementById("reciboImg");
-      fetch(img.src).then(r=>r.blob()).then(blob=>{
-        navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
-        alert("✅ Recibo copiado!");
-      });
+    async function copiarRecibo(){
+      try{
+        const img=document.getElementById("reciboImg");
+        if(!img) throw new Error("Recibo não disponível no momento.");
+
+        if(navigator.clipboard?.write && window.ClipboardItem){
+          const blob=await fetch(img.src).then(r=>r.blob());
+          await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+          alert("✅ Recibo copiado!");
+          return;
+        }
+
+        const html=img.dataset.htmlRecibo || '';
+        if(html && navigator.clipboard?.writeText){
+          await navigator.clipboard.writeText(html);
+          alert("✅ Recibo copiado como texto!");
+          return;
+        }
+
+        throw new Error("Este navegador não suporta cópia automática.");
+      }catch(err){
+        console.error(err);
+        alert("❌ Não foi possível copiar o recibo. " + (err?.message || ''));
+      }
     }
 
     function compartilharRecibo(){
