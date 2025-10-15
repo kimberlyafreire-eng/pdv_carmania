@@ -185,6 +185,7 @@ if (file_exists($dbFile)) {
         <li><a class="btn btn-outline-danger w-100 mb-2" href="index.php">Vender</a></li>
         <li><a class="btn btn-outline-danger w-100 mb-2" href="clientes.php">Clientes</a></li>
         <li><a class="btn btn-outline-danger w-100 mb-2" href="receber.php">Receber</a></li>
+        <li><a class="btn btn-outline-danger w-100 mb-2" href="vendas.php">Vendas</a></li>
         <li><a class="btn btn-outline-danger w-100 mb-2" href="produtos.php">Produtos</a></li>
         <li><a class="btn btn-danger w-100" href="caixa.php">Caixa</a></li>
       </ul>
