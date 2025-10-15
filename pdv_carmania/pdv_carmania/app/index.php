@@ -227,6 +227,9 @@ if (!isset($_SESSION['usuario'])) {
 
     const card = document.createElement('div');
     card.className = 'card product-card shadow-sm';
+    card.addEventListener('click', () => {
+      adicionarAoCarrinho(produto);
+    });
 
     const img = document.createElement('img');
     img.className = 'card-img-top';
