@@ -95,6 +95,15 @@ function seedSituacoesPedido(SQLite3 $db): void
     }
 }
 
+function bindNullableValue(SQLite3Stmt $stmt, string $param, $value, int $typeWhenNotNull): void
+{
+    if ($value === null) {
+        $stmt->bindValue($param, null, SQLITE3_NULL);
+    } else {
+        $stmt->bindValue($param, $value, $typeWhenNotNull);
+    }
+}
+
 function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens): void
 {
     $db = getVendasDb();
@@ -132,64 +141,64 @@ function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens)
             $usuarioNome = $usuarioLogin;
         }
 
-        $sql = <<<'SQL'
-INSERT INTO vendas (
-    id, data_hora, contato_id, contato_nome, usuario_id, usuario_login, usuario_nome,
-    deposito_id, deposito_nome, situacao_id, valor_total, valor_desconto, atualizado_em
-) VALUES (
-    :id, :data_hora, :contato_id, :contato_nome, :usuario_id, :usuario_login, :usuario_nome,
-    :deposito_id, :deposito_nome, :situacao_id, :valor_total, :valor_desconto, CURRENT_TIMESTAMP
-)
-ON CONFLICT(id) DO UPDATE SET
-    data_hora = excluded.data_hora,
-    contato_id = excluded.contato_id,
-    contato_nome = excluded.contato_nome,
-    usuario_id = excluded.usuario_id,
-    usuario_login = excluded.usuario_login,
-    usuario_nome = excluded.usuario_nome,
-    deposito_id = excluded.deposito_id,
-    deposito_nome = excluded.deposito_nome,
-    situacao_id = excluded.situacao_id,
-    valor_total = excluded.valor_total,
-    valor_desconto = excluded.valor_desconto,
-    atualizado_em = excluded.atualizado_em
-SQL;
+        $usuarioLoginParam = $usuarioLogin !== '' ? $usuarioLogin : null;
+        $usuarioNomeParam = $usuarioNome !== '' ? $usuarioNome : null;
+        $depositoNomeParam = $depositoNome !== '' ? $depositoNome : null;
 
-        $stmt = $db->prepare($sql);
-        $stmt->bindValue(':id', $vendaId, SQLITE3_INTEGER);
-        $stmt->bindValue(':data_hora', $dataHora, SQLITE3_TEXT);
+        $updateSql = 'UPDATE vendas SET
+                data_hora = :data_hora,
+                contato_id = :contato_id,
+                contato_nome = :contato_nome,
+                usuario_id = :usuario_id,
+                usuario_login = :usuario_login,
+                usuario_nome = :usuario_nome,
+                deposito_id = :deposito_id,
+                deposito_nome = :deposito_nome,
+                situacao_id = :situacao_id,
+                valor_total = :valor_total,
+                valor_desconto = :valor_desconto,
+                atualizado_em = CURRENT_TIMESTAMP
+            WHERE id = :id';
 
-        if ($contatoId !== null && $contatoId > 0) {
-            $stmt->bindValue(':contato_id', $contatoId, SQLITE3_INTEGER);
-        } else {
-            $stmt->bindValue(':contato_id', null, SQLITE3_NULL);
+        $updateStmt = $db->prepare($updateSql);
+        $updateStmt->bindValue(':id', $vendaId, SQLITE3_INTEGER);
+        $updateStmt->bindValue(':data_hora', $dataHora, SQLITE3_TEXT);
+        bindNullableValue($updateStmt, ':contato_id', ($contatoId !== null && $contatoId > 0) ? $contatoId : null, SQLITE3_INTEGER);
+        $updateStmt->bindValue(':contato_nome', $contatoNome, SQLITE3_TEXT);
+        bindNullableValue($updateStmt, ':usuario_id', ($usuarioId !== null && $usuarioId > 0) ? $usuarioId : null, SQLITE3_INTEGER);
+        bindNullableValue($updateStmt, ':usuario_login', $usuarioLoginParam, SQLITE3_TEXT);
+        bindNullableValue($updateStmt, ':usuario_nome', $usuarioNomeParam, SQLITE3_TEXT);
+        bindNullableValue($updateStmt, ':deposito_id', ($depositoId !== null && $depositoId > 0) ? $depositoId : null, SQLITE3_INTEGER);
+        bindNullableValue($updateStmt, ':deposito_nome', $depositoNomeParam, SQLITE3_TEXT);
+        bindNullableValue($updateStmt, ':situacao_id', ($situacaoId !== null && $situacaoId > 0) ? $situacaoId : null, SQLITE3_INTEGER);
+        $updateStmt->bindValue(':valor_total', $valorTotal, SQLITE3_FLOAT);
+        $updateStmt->bindValue(':valor_desconto', $valorDesconto, SQLITE3_FLOAT);
+        $updateStmt->execute();
+
+        if ($db->changes() === 0) {
+            $insertSql = 'INSERT INTO vendas (
+                    id, data_hora, contato_id, contato_nome, usuario_id, usuario_login, usuario_nome,
+                    deposito_id, deposito_nome, situacao_id, valor_total, valor_desconto, atualizado_em
+                ) VALUES (
+                    :id, :data_hora, :contato_id, :contato_nome, :usuario_id, :usuario_login, :usuario_nome,
+                    :deposito_id, :deposito_nome, :situacao_id, :valor_total, :valor_desconto, CURRENT_TIMESTAMP
+                )';
+
+            $insertStmt = $db->prepare($insertSql);
+            $insertStmt->bindValue(':id', $vendaId, SQLITE3_INTEGER);
+            $insertStmt->bindValue(':data_hora', $dataHora, SQLITE3_TEXT);
+            bindNullableValue($insertStmt, ':contato_id', ($contatoId !== null && $contatoId > 0) ? $contatoId : null, SQLITE3_INTEGER);
+            $insertStmt->bindValue(':contato_nome', $contatoNome, SQLITE3_TEXT);
+            bindNullableValue($insertStmt, ':usuario_id', ($usuarioId !== null && $usuarioId > 0) ? $usuarioId : null, SQLITE3_INTEGER);
+            bindNullableValue($insertStmt, ':usuario_login', $usuarioLoginParam, SQLITE3_TEXT);
+            bindNullableValue($insertStmt, ':usuario_nome', $usuarioNomeParam, SQLITE3_TEXT);
+            bindNullableValue($insertStmt, ':deposito_id', ($depositoId !== null && $depositoId > 0) ? $depositoId : null, SQLITE3_INTEGER);
+            bindNullableValue($insertStmt, ':deposito_nome', $depositoNomeParam, SQLITE3_TEXT);
+            bindNullableValue($insertStmt, ':situacao_id', ($situacaoId !== null && $situacaoId > 0) ? $situacaoId : null, SQLITE3_INTEGER);
+            $insertStmt->bindValue(':valor_total', $valorTotal, SQLITE3_FLOAT);
+            $insertStmt->bindValue(':valor_desconto', $valorDesconto, SQLITE3_FLOAT);
+            $insertStmt->execute();
         }
-        $stmt->bindValue(':contato_nome', $contatoNome, SQLITE3_TEXT);
-
-        if ($usuarioId !== null && $usuarioId > 0) {
-            $stmt->bindValue(':usuario_id', $usuarioId, SQLITE3_INTEGER);
-        } else {
-            $stmt->bindValue(':usuario_id', null, SQLITE3_NULL);
-        }
-        $stmt->bindValue(':usuario_login', $usuarioLogin !== '' ? $usuarioLogin : null, $usuarioLogin !== '' ? SQLITE3_TEXT : SQLITE3_NULL);
-        $stmt->bindValue(':usuario_nome', $usuarioNome !== '' ? $usuarioNome : null, $usuarioNome !== '' ? SQLITE3_TEXT : SQLITE3_NULL);
-
-        if ($depositoId !== null && $depositoId > 0) {
-            $stmt->bindValue(':deposito_id', $depositoId, SQLITE3_INTEGER);
-        } else {
-            $stmt->bindValue(':deposito_id', null, SQLITE3_NULL);
-        }
-        $stmt->bindValue(':deposito_nome', $depositoNome !== '' ? $depositoNome : null, $depositoNome !== '' ? SQLITE3_TEXT : SQLITE3_NULL);
-
-        if ($situacaoId !== null && $situacaoId > 0) {
-            $stmt->bindValue(':situacao_id', $situacaoId, SQLITE3_INTEGER);
-        } else {
-            $stmt->bindValue(':situacao_id', null, SQLITE3_NULL);
-        }
-
-        $stmt->bindValue(':valor_total', $valorTotal, SQLITE3_FLOAT);
-        $stmt->bindValue(':valor_desconto', $valorDesconto, SQLITE3_FLOAT);
-        $stmt->execute();
 
         $delPag = $db->prepare('DELETE FROM venda_pagamentos WHERE venda_id = :id');
         $delPag->bindValue(':id', $vendaId, SQLITE3_INTEGER);
