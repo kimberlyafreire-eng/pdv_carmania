@@ -538,7 +538,7 @@ if ($isCrediario && $clienteId) {
         return [$http, $resp];
     };
 
-    $saldoAntes = 0.0;
+    $saldoConsulta = 0.0;
     $payloadSaldo = ['clienteId' => (string)$clienteId];
 
     // Tenta primeiro /api/crediario/saldo.php, depois /api/saldo.php
@@ -552,8 +552,8 @@ if ($isCrediario && $clienteId) {
         if ($http === 200 && $resp) {
             $jsonSaldo = json_decode($resp, true);
             if (!empty($jsonSaldo['ok']) && isset($jsonSaldo['saldoAtual'])) {
-                $saldoAntes = (float)$jsonSaldo['saldoAtual'];
-                logMsg("✅ Saldo obtido via $path -> R$ " . number_format($saldoAntes, 2, ',', '.'));
+                $saldoConsulta = (float)$jsonSaldo['saldoAtual'];
+                logMsg("✅ Saldo obtido via $path -> R$ " . number_format($saldoConsulta, 2, ',', '.'));
                 break;
             } else {
                 logMsg("⚠️ Resposta inesperada de $path -> $resp");
@@ -563,7 +563,12 @@ if ($isCrediario && $clienteId) {
         }
     }
 
-    $novoSaldo = $saldoAntes + $totalFinal;
+    $saldoAnteriorEstimado = round($saldoConsulta - $totalFinal, 2);
+    if (abs($saldoAnteriorEstimado) < 0.01) {
+        $saldoAnteriorEstimado = 0.0;
+    }
+
+    $novoSaldo = $saldoConsulta;
 
     // Bloco visual do resumo do crediário (centralizado)
     $resumoCrediarioHtml = "
@@ -580,14 +585,14 @@ if ($isCrediario && $clienteId) {
     '>
       <p style='margin:3px 0;font-weight:bold;'>💳 Resumo do Crediário</p>
       <table style='width:100%;font-size:12px;'>
-        <tr><td style='text-align:left;'>Saldo Anterior:</td><td style='text-align:right;'>R$ ".number_format($saldoAntes,2,',','.')."</td></tr>
+        <tr><td style='text-align:left;'>Saldo Anterior:</td><td style='text-align:right;'>R$ ".number_format($saldoAnteriorEstimado,2,',','.')."</td></tr>
         <tr><td style='text-align:left;'>Compra Atual:</td><td style='text-align:right;'>R$ ".number_format($totalFinal,2,',','.')."</td></tr>
         <tr><td colspan='2'><hr style='border:0;border-top:1px dashed #ccc;'></td></tr>
         <tr><td style='text-align:left;'><b>Novo Saldo:</b></td><td style='text-align:right;color:#dc3545;'><b>R$ ".number_format($novoSaldo,2,',','.')."</b></td></tr>
       </table>
     </div>";
 
-    logMsg("💳 Saldo anterior: {$saldoAntes} | Compra: {$totalFinal} | Novo saldo: {$novoSaldo}");
+    logMsg("💳 Saldo estimado anterior: {$saldoAnteriorEstimado} | Compra: {$totalFinal} | Saldo consultado: {$novoSaldo}");
 }
 
 $reciboHtml = <<<HTML
