@@ -300,10 +300,11 @@ if (!isset($_SESSION['usuario'])) {
       }
     }
 
-    async function carregarClientes() {
+    async function carregarClientes(forcarAtualizacao = false) {
       listaClientesEl.innerHTML = '<div class="text-center text-muted py-3">Carregando clientes...</div>';
       try {
-        const resposta = await fetch('../api/clientes.php');
+        const endpoint = forcarAtualizacao ? '../api/clientes.php?refresh=1' : '../api/clientes.php';
+        const resposta = await fetch(endpoint, { cache: 'no-store' });
         if (!resposta.ok) {
           throw new Error('Erro ao consultar clientes.');
         }
@@ -337,7 +338,7 @@ if (!isset($_SESSION['usuario'])) {
     });
 
     btnRecarregar.addEventListener('click', () => {
-      carregarClientes();
+      carregarClientes(true);
     });
 
     btnNovoCliente.addEventListener('click', () => {
