@@ -242,34 +242,55 @@ do {
             }
         }
 
-        $stmt = $db->prepare(
-            'INSERT INTO produtos (id, codigo, nome, preco, imagem_url, imagem_local, gtin)
-             VALUES (:id, :codigo, :nome, :preco, :url, :local, :gtin)
-             ON CONFLICT(id) DO UPDATE SET
-                codigo = excluded.codigo,
-                nome = excluded.nome,
-                preco = excluded.preco,
-                imagem_url = excluded.imagem_url,
-                imagem_local = COALESCE(excluded.imagem_local, produtos.imagem_local),
-                gtin = COALESCE(excluded.gtin, produtos.gtin)'
+        $insertStmt = $db->prepare(
+            'INSERT OR IGNORE INTO produtos (id, codigo, nome, preco, imagem_url, imagem_local, gtin)
+             VALUES (:id, :codigo, :nome, :preco, :url, :local, :gtin)'
         );
-        $stmt->bindValue(':id', $id);
-        $stmt->bindValue(':codigo', $codigo);
-        $stmt->bindValue(':nome', $nome);
-        $stmt->bindValue(':preco', $preco);
+        $insertStmt->bindValue(':id', $id);
+        $insertStmt->bindValue(':codigo', $codigo);
+        $insertStmt->bindValue(':nome', $nome);
+        $insertStmt->bindValue(':preco', $preco);
         if ($urlImg === null) {
-            $stmt->bindValue(':url', null, SQLITE3_NULL);
+            $insertStmt->bindValue(':url', null, SQLITE3_NULL);
         } else {
-            $stmt->bindValue(':url', $urlImg);
+            $insertStmt->bindValue(':url', $urlImg);
         }
 
         if ($localImg === null) {
-            $stmt->bindValue(':local', null, SQLITE3_NULL);
+            $insertStmt->bindValue(':local', null, SQLITE3_NULL);
         } else {
-            $stmt->bindValue(':local', $localImg);
+            $insertStmt->bindValue(':local', $localImg);
         }
-        $stmt->bindValue(':gtin', null, SQLITE3_NULL);
-        $stmt->execute();
+        $insertStmt->bindValue(':gtin', null, SQLITE3_NULL);
+        $insertStmt->execute();
+
+        $updateStmt = $db->prepare(
+            'UPDATE produtos
+             SET codigo = :codigo,
+                 nome = :nome,
+                 preco = :preco,
+                 imagem_url = :url,
+                 imagem_local = COALESCE(:local, imagem_local),
+                 gtin = COALESCE(:gtin, gtin)
+             WHERE id = :id'
+        );
+        $updateStmt->bindValue(':id', $id);
+        $updateStmt->bindValue(':codigo', $codigo);
+        $updateStmt->bindValue(':nome', $nome);
+        $updateStmt->bindValue(':preco', $preco);
+        if ($urlImg === null) {
+            $updateStmt->bindValue(':url', null, SQLITE3_NULL);
+        } else {
+            $updateStmt->bindValue(':url', $urlImg);
+        }
+
+        if ($localImg === null) {
+            $updateStmt->bindValue(':local', null, SQLITE3_NULL);
+        } else {
+            $updateStmt->bindValue(':local', $localImg);
+        }
+        $updateStmt->bindValue(':gtin', null, SQLITE3_NULL);
+        $updateStmt->execute();
 
         $totalInseridos++;
 
@@ -307,4 +328,3 @@ do {
 } while (true);
 
 logAtualizacao("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos");
-?>
