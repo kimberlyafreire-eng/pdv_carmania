@@ -501,19 +501,122 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     // ========================
     // ======= CLIENTES =======
     // ========================
-    async function carregarClientes() {
-      try {
-        const res = await fetch("../cache/clientes-cache.json?nocache=" + Date.now());
-        const json = await res.json();
-        clientesLista = json.data || json;
-      } catch {
-        clientesLista = [];
+    function sanitizarClientes(listaBruta) {
+      if (!Array.isArray(listaBruta)) {
+        return [];
       }
+
+      const mapa = new Map();
+
+      listaBruta.forEach((cliente) => {
+        if (!cliente || typeof cliente !== 'object') return;
+
+        const id = String(cliente.id ?? '').trim();
+        if (!id) return;
+
+        const nomesPossiveis = [cliente.nome, cliente.razaoSocial, cliente.fantasia];
+        let nomeLimpo = '';
+        for (let i = 0; i < nomesPossiveis.length; i += 1) {
+          const valor = nomesPossiveis[i];
+          if (typeof valor === 'string') {
+            const texto = valor.trim();
+            if (texto) {
+              nomeLimpo = texto;
+              break;
+            }
+          }
+        }
+
+        if (!nomeLimpo) return;
+
+        const existente = mapa.get(id) || { id, nome: nomeLimpo };
+        existente.nome = nomeLimpo;
+
+        const doc = typeof cliente.numeroDocumento === 'string' && cliente.numeroDocumento.trim()
+          ? cliente.numeroDocumento.trim()
+          : (typeof cliente.documento === 'string' && cliente.documento.trim() ? cliente.documento.trim() : null);
+        if (doc) existente.numeroDocumento = doc;
+
+        if (typeof cliente.celular === 'string' && cliente.celular.trim()) {
+          existente.celular = cliente.celular.trim();
+        }
+
+        if (typeof cliente.telefone === 'string' && cliente.telefone.trim()) {
+          existente.telefone = cliente.telefone.trim();
+        }
+
+        if (cliente.endereco && typeof cliente.endereco === 'object') {
+          existente.endereco = cliente.endereco;
+        }
+
+        mapa.set(id, existente);
+      });
+
+      return Array.from(mapa.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
     }
 
+    async function buscarClientes(url) {
+      const resposta = await fetch(url, { cache: 'no-store' });
+      if (!resposta.ok) {
+        throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
+      }
+
+      const texto = await resposta.text();
+      if (!texto) {
+        return [];
+      }
+
+      let json;
+      try {
+        json = JSON.parse(texto);
+      } catch (erro) {
+        throw new Error('JSON inválido ao carregar clientes.');
+      }
+
+      let listaBruta = [];
+      if (json && typeof json === 'object' && Array.isArray(json.data)) {
+        listaBruta = json.data;
+      } else if (Array.isArray(json)) {
+        listaBruta = json;
+      }
+
+      if (!Array.isArray(listaBruta) || !listaBruta.length) {
+        return [];
+      }
+
+      return sanitizarClientes(listaBruta);
+    }
+
+    async function carregarClientes() {
+      const fontes = [
+        `../cache/clientes-cache.json?nocache=${Date.now()}`,
+        `../api/clientes.php?nocache=${Date.now()}`,
+      ];
+
+      for (let i = 0; i < fontes.length; i += 1) {
+        const url = fontes[i];
+        try {
+          const resultado = await buscarClientes(url);
+          if (resultado.length) {
+            clientesLista = resultado;
+            return;
+          }
+        } catch (erro) {
+          console.warn(`Falha ao ler clientes de ${url}`, erro);
+        }
+      }
+
+      clientesLista = [];
+    }
+
+    carregarClientes();
+
     function abrirModalCliente() {
-      document.getElementById("clienteBusca").value = "";
+      const input = document.getElementById("clienteBusca");
+      input.value = "";
+      delete input.dataset.id;
       document.getElementById("listaClientes").innerHTML = "";
+      carregarClientes();
       new bootstrap.Modal(document.getElementById("modalCliente")).show();
     }
 
@@ -521,8 +624,10 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       if (e.target.id !== "clienteBusca") return;
       const busca = e.target.value.toLowerCase();
       const lista = document.getElementById("listaClientes");
+      delete e.target.dataset.id;
       lista.innerHTML = "";
       if (busca.length < 2) return;
+      if (!clientesLista.length) return;
       const resultados = clientesLista.filter(c => c.nome.toLowerCase().includes(busca)).slice(0, 6);
       resultados.forEach(cliente => {
         const item = document.createElement("button");

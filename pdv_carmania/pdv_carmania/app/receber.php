@@ -80,49 +80,112 @@ if (!isset($_SESSION['usuario'])) {
     let clientesLista = [];
     let clienteSelecionado = null;
 
-    async function carregarClientes() {
-      const normalizarClientes = (payload) => {
-        if (payload && Array.isArray(payload.data)) {
-          return payload.data;
-        }
-        return Array.isArray(payload) ? payload : [];
-      };
+    function sanitizarClientes(listaBruta) {
+      if (!Array.isArray(listaBruta)) {
+        return [];
+      }
 
-      const buscarClientes = async (url) => {
-        const resposta = await fetch(url);
-        if (!resposta.ok) {
-          throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
-        }
-        const texto = await resposta.text();
-        if (!texto) {
-          throw new Error('Resposta vazia ao carregar clientes.');
-        }
-        let json;
-        try {
-          json = JSON.parse(texto);
-        } catch (erro) {
-          throw new Error('JSON inválido ao carregar clientes.');
-        }
-        return normalizarClientes(json);
-      };
+      const mapa = new Map();
 
-      const cacheUrl = `../cache/clientes-cache.json?nocache=${Date.now()}`;
-      const apiUrl = `../api/clientes.php?nocache=${Date.now()}`;
+      listaBruta.forEach((cliente) => {
+        if (!cliente || typeof cliente !== 'object') return;
 
+        const id = String(cliente.id ?? '').trim();
+        if (!id) return;
+
+        const nomesPossiveis = [cliente.nome, cliente.razaoSocial, cliente.fantasia];
+        let nomeLimpo = '';
+        for (let i = 0; i < nomesPossiveis.length; i += 1) {
+          const valor = nomesPossiveis[i];
+          if (typeof valor === 'string') {
+            const texto = valor.trim();
+            if (texto) {
+              nomeLimpo = texto;
+              break;
+            }
+          }
+        }
+
+        if (!nomeLimpo) return;
+
+        const existente = mapa.get(id) || { id, nome: nomeLimpo };
+        existente.nome = nomeLimpo;
+
+        const doc = typeof cliente.numeroDocumento === 'string' && cliente.numeroDocumento.trim()
+          ? cliente.numeroDocumento.trim()
+          : (typeof cliente.documento === 'string' && cliente.documento.trim() ? cliente.documento.trim() : null);
+        if (doc) existente.numeroDocumento = doc;
+
+        if (typeof cliente.celular === 'string' && cliente.celular.trim()) {
+          existente.celular = cliente.celular.trim();
+        }
+
+        if (typeof cliente.telefone === 'string' && cliente.telefone.trim()) {
+          existente.telefone = cliente.telefone.trim();
+        }
+
+        if (cliente.endereco && typeof cliente.endereco === 'object') {
+          existente.endereco = cliente.endereco;
+        }
+
+        mapa.set(id, existente);
+      });
+
+      return Array.from(mapa.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
+    }
+
+    async function buscarClientes(url) {
+      const resposta = await fetch(url, { cache: 'no-store' });
+      if (!resposta.ok) {
+        throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
+      }
+
+      const texto = await resposta.text();
+      if (!texto) {
+        return [];
+      }
+
+      let json;
       try {
-        clientesLista = await buscarClientes(cacheUrl);
-        if (!clientesLista.length) {
-          clientesLista = await buscarClientes(apiUrl);
-        }
-      } catch (erroCache) {
-        console.warn('Falha ao ler cache de clientes. Tentando carregar via API.', erroCache);
+        json = JSON.parse(texto);
+      } catch (erro) {
+        throw new Error('JSON inválido ao carregar clientes.');
+      }
+
+      let listaBruta = [];
+      if (json && typeof json === 'object' && Array.isArray(json.data)) {
+        listaBruta = json.data;
+      } else if (Array.isArray(json)) {
+        listaBruta = json;
+      }
+
+      if (!Array.isArray(listaBruta) || !listaBruta.length) {
+        return [];
+      }
+
+      return sanitizarClientes(listaBruta);
+    }
+
+    async function carregarClientes() {
+      const fontes = [
+        `../cache/clientes-cache.json?nocache=${Date.now()}`,
+        `../api/clientes.php?nocache=${Date.now()}`,
+      ];
+
+      for (let i = 0; i < fontes.length; i += 1) {
+        const url = fontes[i];
         try {
-          clientesLista = await buscarClientes(apiUrl);
-        } catch (erroApi) {
-          console.error('Não foi possível carregar a lista de clientes.', erroCache, erroApi);
-          clientesLista = [];
+          const resultado = await buscarClientes(url);
+          if (resultado.length) {
+            clientesLista = resultado;
+            return;
+          }
+        } catch (erro) {
+          console.warn(`Falha ao ler clientes de ${url}`, erro);
         }
       }
+
+      clientesLista = [];
     }
 
     carregarClientes();
@@ -133,6 +196,9 @@ if (!isset($_SESSION['usuario'])) {
 
     inputBusca.addEventListener("input", function() {
       const busca = this.value.toLowerCase();
+      delete this.dataset.id;
+      clienteSelecionado = null;
+      document.getElementById("btnBuscarSaldo").disabled = true;
       listaEl.innerHTML = "";
       if (!busca) return;
 

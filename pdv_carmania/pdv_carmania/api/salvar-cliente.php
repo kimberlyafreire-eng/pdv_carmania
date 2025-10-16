@@ -172,9 +172,11 @@ if ($httpCode < 200 || $httpCode >= 300) {
 }
 
 $clienteAtualizado = $dadosResposta['data'] ?? null;
+$clienteNormalizado = null;
 
 // Atualiza o cache local de clientes quando possível.
 if (is_array($clienteAtualizado)) {
+    $clienteNormalizado = normalizarClienteParaResposta($clienteAtualizado);
     $cacheClientes = __DIR__ . '/../cache/clientes-cache.json';
     $clientes = ['data' => []];
 
@@ -182,24 +184,72 @@ if (is_array($clienteAtualizado)) {
         $conteudoCache = file_get_contents($cacheClientes);
         if ($conteudoCache !== false) {
             $jsonCache = json_decode($conteudoCache, true);
-            if (is_array($jsonCache) && isset($jsonCache['data']) && is_array($jsonCache['data'])) {
-                $clientes = $jsonCache;
+            if (is_array($jsonCache)) {
+                $listaCache = [];
+                if (isset($jsonCache['data']) && is_array($jsonCache['data'])) {
+                    $listaCache = $jsonCache['data'];
+                } else {
+                    foreach ($jsonCache as $valor) {
+                        if (is_array($valor)) {
+                            $listaCache[] = $valor;
+                        }
+                    }
+                }
+
+                $clientesNormalizados = [];
+                foreach ($listaCache as $cliente) {
+                    if (!is_array($cliente)) {
+                        continue;
+                    }
+                    $normalizado = normalizarClienteParaResposta($cliente);
+                    if ($normalizado === null) {
+                        continue;
+                    }
+                    $clientesNormalizados[$normalizado['id']] = $normalizado;
+                }
+
+                if (!empty($clientesNormalizados)) {
+                    $clientes['data'] = array_values($clientesNormalizados);
+                }
             }
         }
     }
 
     $atualizado = false;
-    foreach ($clientes['data'] as &$cliente) {
-        if (isset($cliente['id']) && isset($clienteAtualizado['id']) && (string)$cliente['id'] === (string)$clienteAtualizado['id']) {
-            $cliente = $clienteAtualizado;
-            $atualizado = true;
-            break;
+    if ($clienteNormalizado !== null) {
+        foreach ($clientes['data'] as &$cliente) {
+            if (isset($cliente['id']) && (string) $cliente['id'] === (string) $clienteNormalizado['id']) {
+                $cliente = $clienteNormalizado;
+                $atualizado = true;
+                break;
+            }
+        }
+        unset($cliente);
+
+        if (!$atualizado) {
+            $clientes['data'][] = $clienteNormalizado;
+        }
+    } elseif (isset($clienteAtualizado['id'])) {
+        foreach ($clientes['data'] as &$cliente) {
+            if (isset($cliente['id']) && (string) $cliente['id'] === (string) $clienteAtualizado['id']) {
+                $cliente = $clienteAtualizado;
+                $atualizado = true;
+                break;
+            }
+        }
+        unset($cliente);
+
+        if (!$atualizado) {
+            $clientes['data'][] = $clienteAtualizado;
         }
     }
-    unset($cliente);
 
-    if (!$atualizado) {
-        $clientes['data'][] = $clienteAtualizado;
+    if (!empty($clientes['data'])) {
+        usort($clientes['data'], static function (array $a, array $b): int {
+            $nomeA = isset($a['nome']) ? (string) $a['nome'] : '';
+            $nomeB = isset($b['nome']) ? (string) $b['nome'] : '';
+            return strcasecmp($nomeA, $nomeB);
+        });
     }
 
     $jsonFinal = json_encode($clientes, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -239,7 +289,7 @@ $mensagem = $contatoId ? 'Cliente atualizado com sucesso!' : 'Cliente cadastrado
 echo json_encode([
     'sucesso' => true,
     'mensagem' => $mensagem,
-    'cliente' => $clienteAtualizado,
+    'cliente' => $clienteNormalizado ?? $clienteAtualizado,
 ]);
 
 session_write_close();

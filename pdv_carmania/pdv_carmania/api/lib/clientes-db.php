@@ -226,6 +226,134 @@ function normalizarDadosCliente(array $cliente): array
 }
 
 /**
+ * Normaliza uma estrutura de cliente (vinda do Bling ou cache) para o formato
+ * utilizado pelo front-end.
+ */
+function normalizarClienteParaResposta(array $cliente): ?array
+{
+    $id = isset($cliente['id']) ? trim((string) $cliente['id']) : '';
+    if ($id === '') {
+        return null;
+    }
+
+    $possiveisNomes = [
+        $cliente['nome'] ?? null,
+        $cliente['razaoSocial'] ?? null,
+        $cliente['fantasia'] ?? null,
+    ];
+
+    $nome = '';
+    foreach ($possiveisNomes as $valor) {
+        if (is_string($valor)) {
+            $valor = trim($valor);
+            if ($valor !== '') {
+                $nome = $valor;
+                break;
+            }
+        }
+    }
+
+    if ($nome === '') {
+        return null;
+    }
+
+    $tipo = null;
+    if (!empty($cliente['tipo'])) {
+        $tipo = strtoupper(substr((string) $cliente['tipo'], 0, 1));
+    } elseif (!empty($cliente['tipoPessoa'])) {
+        $tipo = strtoupper(substr((string) $cliente['tipoPessoa'], 0, 1));
+    }
+
+    $numeroDocumento = null;
+    $documentoBruto = $cliente['numeroDocumento'] ?? ($cliente['documento'] ?? null);
+    if ($documentoBruto !== null && $documentoBruto !== '') {
+        $digitos = preg_replace('/\D+/', '', (string) $documentoBruto);
+        if ($digitos !== '') {
+            $numeroDocumento = formatarDocumentoSaida($digitos);
+        }
+    }
+
+    $codigo = isset($cliente['codigo']) ? trim((string) $cliente['codigo']) : null;
+    if ($codigo === '') {
+        $codigo = null;
+    }
+
+    $celular = isset($cliente['celular']) ? trim((string) $cliente['celular']) : null;
+    if ($celular === '') {
+        $celular = null;
+    }
+
+    $telefone = isset($cliente['telefone']) ? trim((string) $cliente['telefone']) : null;
+    if ($telefone === '') {
+        $telefone = null;
+    }
+
+    $enderecoFonte = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? null);
+    $enderecoNormalizado = [];
+
+    if (is_array($enderecoFonte)) {
+        $rua = isset($enderecoFonte['endereco']) ? trim((string) $enderecoFonte['endereco']) : '';
+        if ($rua !== '') {
+            $enderecoNormalizado['endereco'] = $rua;
+        }
+
+        $bairro = isset($enderecoFonte['bairro']) ? trim((string) $enderecoFonte['bairro']) : '';
+        if ($bairro !== '') {
+            $enderecoNormalizado['bairro'] = $bairro;
+        }
+
+        $municipio = isset($enderecoFonte['municipio']) ? trim((string) $enderecoFonte['municipio']) : '';
+        if ($municipio !== '') {
+            $enderecoNormalizado['municipio'] = $municipio;
+        }
+
+        $uf = isset($enderecoFonte['uf']) ? strtoupper(trim((string) $enderecoFonte['uf'])) : '';
+        if ($uf !== '') {
+            $enderecoNormalizado['uf'] = $uf;
+        }
+
+        $cepBruto = isset($enderecoFonte['cep']) ? (string) $enderecoFonte['cep'] : '';
+        if ($cepBruto !== '') {
+            $cepDigitos = preg_replace('/\D+/', '', $cepBruto);
+            if ($cepDigitos !== '') {
+                $enderecoNormalizado['cep'] = formatarCepSaida($cepDigitos);
+            }
+        }
+    }
+
+    $clienteNormalizado = [
+        'id' => $id,
+        'nome' => $nome,
+    ];
+
+    if ($tipo !== null && $tipo !== '') {
+        $clienteNormalizado['tipo'] = $tipo;
+    }
+
+    if ($numeroDocumento !== null) {
+        $clienteNormalizado['numeroDocumento'] = $numeroDocumento;
+    }
+
+    if ($codigo !== null) {
+        $clienteNormalizado['codigo'] = $codigo;
+    }
+
+    if ($celular !== null) {
+        $clienteNormalizado['celular'] = $celular;
+    }
+
+    if ($telefone !== null) {
+        $clienteNormalizado['telefone'] = $telefone;
+    }
+
+    if (!empty($enderecoNormalizado)) {
+        $clienteNormalizado['endereco'] = ['geral' => $enderecoNormalizado];
+    }
+
+    return $clienteNormalizado;
+}
+
+/**
  * Converte uma linha da tabela de clientes para a estrutura utilizada no front-end.
  */
 function montarEstruturaCliente(array $linha): array
