@@ -20,6 +20,23 @@ function logAtualizacao($msg) {
     file_put_contents($logFile, $line, FILE_APPEND);
 }
 
+function respeitarLimiteBling(float $intervaloMinimo = 0.4): void
+{
+    static $proximaDisponibilidade = 0.0;
+
+    $agora = microtime(true);
+
+    if ($agora < $proximaDisponibilidade) {
+        $aguardar = (int) (($proximaDisponibilidade - $agora) * 1_000_000);
+        if ($aguardar > 0) {
+            usleep($aguardar);
+        }
+        $agora = microtime(true);
+    }
+
+    $proximaDisponibilidade = $agora + $intervaloMinimo;
+}
+
 function downloadImagem(string $url, string $destino): bool {
     $ch = curl_init($url);
     if ($ch === false) {
@@ -100,6 +117,8 @@ function extrairHeaders(string $headersRaw): array
 function executarRequisicaoBling(string $url, string $contexto, int $tentativa = 0)
 {
     global $access_token;
+
+    respeitarLimiteBling();
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -234,6 +253,65 @@ function extrairGtinProduto(array $dadosProduto): ?string
 
 $pagina = 1;
 $totalInseridos = 0;
+$totalEsperado = null;
+$inicioExecucao = microtime(true);
+$idsRecebidos = [];
+$limitePagina = 100;
+
+function atualizarBarraProgresso(int $processados, ?int $total, float $inicio): void
+{
+    if ($total === null || $total <= 0) {
+        $total = max($processados, 1);
+    }
+
+    $progresso = max(0, min(1, $processados / $total));
+    $largura = 40;
+    $preenchidos = (int) round($progresso * $largura);
+    $barra = str_repeat('#', $preenchidos) . str_repeat('-', $largura - $preenchidos);
+    $percentual = $progresso * 100;
+
+    $decorrido = microtime(true) - $inicio;
+    $eta = $progresso > 0 ? ($decorrido / $progresso) - $decorrido : null;
+
+    if ($eta !== null && $eta < 0) {
+        $eta = 0;
+    }
+
+    $etaFormatado = $eta === null
+        ? 'calculando...'
+        : formatarDuracao($eta);
+
+    $linha = sprintf(
+        "\rProgresso: [%s] %d/%d (%.1f%%) ETA: %s",
+        $barra,
+        $processados,
+        $total,
+        $percentual,
+        $etaFormatado
+    );
+
+    echo $linha;
+    if (function_exists('ob_flush')) {
+        @ob_flush();
+    }
+    flush();
+}
+
+function formatarDuracao(float $segundos): string
+{
+    $segundos = (int) round($segundos);
+
+    $horas = intdiv($segundos, 3600);
+    $segundos %= 3600;
+    $minutos = intdiv($segundos, 60);
+    $segundos %= 60;
+
+    if ($horas > 0) {
+        return sprintf('%02dh %02dm %02ds', $horas, $minutos, $segundos);
+    }
+
+    return sprintf('%02dm %02ds', $minutos, $segundos);
+}
 
 do {
     [$httpcode, $response] = buscarPaginaProdutos($pagina);
@@ -246,7 +324,31 @@ do {
     }
 
     $dados = json_decode($response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        logAtualizacao("⚠️ Resposta inválida ao buscar página $pagina. Tentando novamente em 5s...");
+        sleep(5);
+        continue;
+    }
     $produtos = $dados['data'] ?? [];
+
+    if ($totalEsperado === null) {
+        $pageInfo = isset($dados['page']) && is_array($dados['page']) ? $dados['page'] : [];
+        $possiveisChavesTotal = ['totalRecords', 'totalElements', 'totalItems', 'total'];
+        foreach ($possiveisChavesTotal as $chaveTotal) {
+            if (isset($pageInfo[$chaveTotal])) {
+                $totalEsperado = (int) $pageInfo[$chaveTotal];
+                break;
+            }
+        }
+
+        if ($totalEsperado === null && isset($pageInfo['totalPages'])) {
+            $totalEsperado = (int) $pageInfo['totalPages'] * $limitePagina;
+        }
+
+        if ($totalEsperado !== null && $totalEsperado <= 0) {
+            $totalEsperado = null;
+        }
+    }
 
     logAtualizacao("📦 Página $pagina - " . count($produtos) . " produtos");
 
@@ -352,6 +454,7 @@ do {
         $updateStmt->execute();
 
         $totalInseridos++;
+        $idsRecebidos[$id] = true;
 
         [$detalheStatus, $detalheResposta] = buscarDetalheProduto($id);
         if ($detalheStatus === 200) {
@@ -375,12 +478,79 @@ do {
             logAtualizacao("⚠️ Não foi possível obter detalhes do produto {$id}. HTTP {$detalheStatus}");
         }
 
-        usleep(200000);
+        if ($totalEsperado !== null && $totalEsperado < $totalInseridos) {
+            $totalEsperado = $totalInseridos;
+        }
+
+        $totalParaProgresso = $totalEsperado;
+        if ($totalParaProgresso === null) {
+            $totalParaProgresso = max($totalInseridos, (($pagina - 1) * $limitePagina) + count($produtos));
+        }
+
+        atualizarBarraProgresso($totalInseridos, $totalParaProgresso, $inicioExecucao);
     }
 
     $pagina++;
-    usleep(400000);
+
+    if ($totalEsperado !== null) {
+        $estimativaMinima = ($pagina - 1) * $limitePagina;
+        if ($estimativaMinima > $totalEsperado) {
+            $totalEsperado = $estimativaMinima;
+        }
+    }
 
 } while (true);
+
+$totalEsperadoFinal = $totalEsperado ?? $totalInseridos;
+atualizarBarraProgresso($totalInseridos, max($totalEsperadoFinal, $totalInseridos), $inicioExecucao);
+echo PHP_EOL;
+
+$idsExistentes = [];
+$resultadoIds = $db->query('SELECT id FROM produtos');
+while ($resultadoIds && ($linha = $resultadoIds->fetchArray(SQLITE3_ASSOC))) {
+    if (!isset($linha['id'])) {
+        continue;
+    }
+    $idsExistentes[] = (string) $linha['id'];
+}
+
+$idsRecebidosLista = array_keys($idsRecebidos);
+$idsRecebidosMapa = array_fill_keys($idsRecebidosLista, true);
+$idsParaExcluir = [];
+
+foreach ($idsExistentes as $idExistente) {
+    if (!isset($idsRecebidosMapa[$idExistente])) {
+        $idsParaExcluir[] = $idExistente;
+    }
+}
+
+$totalExcluidos = 0;
+
+if (!empty($idsParaExcluir)) {
+    $chunks = array_chunk($idsParaExcluir, 900);
+    foreach ($chunks as $chunk) {
+        $placeholders = [];
+        foreach ($chunk as $indice => $_) {
+            $placeholders[] = ':id' . $indice;
+        }
+
+        $sqlDelete = 'DELETE FROM produtos WHERE id IN (' . implode(',', $placeholders) . ')';
+        $stmtDelete = $db->prepare($sqlDelete);
+        foreach ($chunk as $indice => $valorId) {
+            $stmtDelete->bindValue(':id' . $indice, $valorId, SQLITE3_TEXT);
+        }
+
+        $resultadoDelete = $stmtDelete->execute();
+        if ($resultadoDelete !== false) {
+            $totalExcluidos += $db->changes();
+        }
+    }
+}
+
+if ($totalExcluidos > 0) {
+    logAtualizacao("🧹 Produtos removidos do banco local por não estarem no Bling: {$totalExcluidos}");
+} else {
+    logAtualizacao('🧹 Nenhum produto precisou ser removido do banco local.');
+}
 
 logAtualizacao("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos");
