@@ -109,7 +109,7 @@ if (!isset($_SESSION['usuario'])) {
     <!-- Campo de Busca -->
     <div class="row mb-3">
       <div class="col-12 col-lg-6 mx-auto">
-        <input type="text" id="campoBusca" class="form-control" placeholder="Buscar produto por nome ou codigo..." />
+        <input type="text" id="campoBusca" class="form-control" placeholder="Buscar produto por nome, código, código de barras ou GTIN..." />
       </div>
     </div>
 
@@ -144,6 +144,12 @@ if (!isset($_SESSION['usuario'])) {
   <script>
   let carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
   let todosProdutos = [];
+
+  const removerAcentos = (texto) => typeof texto === 'string'
+    ? texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    : '';
+
+  const normalizarTexto = (texto) => removerAcentos(String(texto || '')).toLowerCase();
 
   function adicionarAoCarrinho(produto) {
     const existente = carrinho.find(p => p.id === produto.id);
@@ -307,13 +313,34 @@ if (!isset($_SESSION['usuario'])) {
     return col;
   }
 
+  function obterTermosBusca(termo) {
+    return normalizarTexto(termo).split(/\s+/).filter(Boolean);
+  }
+
   function filtrarProdutos(termo) {
     const grid = document.getElementById('product-grid');
-    const termoLower = termo.toLowerCase();
-    const filtrados = todosProdutos.filter(p =>
-      p.nome.toLowerCase().includes(termoLower) ||
-      String(p.codigo || '').includes(termo)
-    );
+    const termoNormalizado = normalizarTexto(termo);
+    const termosNome = obterTermosBusca(termo);
+    const termoLower = String(termo || '').toLowerCase();
+    const termoLowerCompacto = termoLower.replace(/\s+/g, '');
+
+    const filtrados = todosProdutos.filter(p => {
+      if (!termoNormalizado) {
+        return true;
+      }
+
+      const nomeNormalizado = normalizarTexto(p.nome);
+      const codigo = String(p.codigo || '').toLowerCase();
+      const gtin = String(p.gtin || '').toLowerCase();
+      const codigoCompacto = codigo.replace(/\s+/g, '');
+      const gtinCompacto = gtin.replace(/\s+/g, '');
+
+      const correspondeNome = termosNome.every((parte) => nomeNormalizado.includes(parte));
+      const correspondeCodigo = codigo.includes(termoLower) || codigoCompacto.includes(termoLowerCompacto);
+      const correspondeGtin = gtin.includes(termoLower) || gtinCompacto.includes(termoLowerCompacto);
+
+      return correspondeNome || correspondeCodigo || correspondeGtin;
+    });
 
     grid.innerHTML = '';
     filtrados.forEach(produto => {
@@ -331,7 +358,12 @@ if (!isset($_SESSION['usuario'])) {
     try {
       const resposta = await fetch(`../api/produtos-json.php`);
       const dados = await resposta.json();
-      todosProdutos = dados.data || [];
+      todosProdutos = (dados.data || []).map((produto) => ({
+        ...produto,
+        nome: (produto && produto.nome) ? produto.nome : '',
+        codigo: (produto && produto.codigo) ? produto.codigo : '',
+        gtin: (produto && produto.gtin) ? produto.gtin : ''
+      }));
       filtrarProdutos(document.getElementById('campoBusca').value);
     } catch (erro) {
       console.error('Erro ao carregar os produtos:', erro);
