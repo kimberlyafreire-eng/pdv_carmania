@@ -1,23 +1,67 @@
 <?php
 require_once __DIR__ . '/lib/token-helper.php';
 
+set_time_limit(0);
+
 // CONFIGURAÇÕES
 $tokenFile   = __DIR__ . '/token.json';
 $dbFile      = __DIR__ . '/../db/produtos.db';
 $imagensPath = __DIR__ . '/../imagens';
 $logDir      = __DIR__ . '/../logs';
 $logFile     = $logDir . '/atualizar.log';
+$requestDelaySeconds = 5;
+
+$isCli = PHP_SAPI === 'cli';
+$logEntries = [];
+
+function flushOutput(): void
+{
+    if (ob_get_level() > 0) {
+        @ob_flush();
+    }
+    flush();
+}
+
+if (!$isCli) {
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!DOCTYPE html><html lang="pt-br"><head><meta charset="utf-8"><title>Atualização de Produtos</title>';
+    echo '<style>body{font-family:Arial,Helvetica,sans-serif;background:#111;color:#f2f2f2;margin:0;padding:20px;}';
+    echo '.container{max-width:900px;margin:0 auto;background:#1b1b1b;border-radius:12px;padding:24px;box-shadow:0 0 25px rgba(0,0,0,0.45);}';
+    echo 'h1{margin-top:0;font-size:24px;} .log{margin-top:20px;max-height:70vh;overflow-y:auto;background:#0c0c0c;border-radius:8px;padding:16px;}';
+    echo '.log-entry{padding:6px 8px;border-left:4px solid #444;margin-bottom:6px;line-height:1.4;background:rgba(255,255,255,0.03);}';
+    echo '.success{border-color:#3fb950;} .error{border-color:#f85149;} .warn{border-color:#d29922;} .info{border-color:#58a6ff;}';
+    echo '</style></head><body><div class="container"><h1>Atualização de produtos</h1>';
+    echo '<p>Iniciando processo, aguarde. Cada etapa possui um atraso mínimo de ' . $requestDelaySeconds . 's para evitar limites da API.</p>';
+    echo '<div class="log" id="log">';
+    flushOutput();
+}
 
 // GARANTIR PASTAS
 if (!is_dir(dirname($dbFile))) mkdir(dirname($dbFile), 0777, true);
 if (!is_dir($imagensPath)) mkdir($imagensPath, 0777, true);
 if (!is_dir($logDir)) mkdir($logDir, 0777, true);
 
-function logAtualizacao($msg) {
-    global $logFile;
-    $line = "[" . date('Y-m-d H:i:s') . "] " . $msg . PHP_EOL;
-    echo $msg . "\n";
-    file_put_contents($logFile, $line, FILE_APPEND);
+function logAtualizacao($msg, string $nivel = 'info') {
+    global $logFile, $isCli, $logEntries;
+
+    $line = "[" . date('Y-m-d H:i:s') . "] " . $msg;
+    $logEntries[] = [$line, $nivel];
+    file_put_contents($logFile, $line . PHP_EOL, FILE_APPEND);
+
+    if ($isCli) {
+        echo $msg . "\n";
+    } else {
+        $classMap = [
+            'success' => 'success',
+            'error'   => 'error',
+            'warn'    => 'warn',
+            'info'    => 'info'
+        ];
+        $classe = $classMap[$nivel] ?? 'info';
+        $htmlMsg = htmlspecialchars($msg, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        echo '<div class="log-entry ' . $classe . '">' . $htmlMsg . '</div>';
+        flushOutput();
+    }
 }
 
 function downloadImagem(string $url, string $destino): bool {
@@ -60,26 +104,26 @@ function downloadImagem(string $url, string $destino): bool {
 logAtualizacao("🔁 Iniciando atualização de produtos...");
 
 if (!file_exists($tokenFile)) {
-    logAtualizacao("❌ Token não encontrado. Execute o auth.php manualmente.");
+    logAtualizacao("❌ Token não encontrado. Execute o auth.php manualmente.", 'error');
     exit;
 }
 
 $access_token = getAccessToken();
 
 if (!$access_token) {
-    logAtualizacao("⚠️ Token indisponível. Tentando renovar...");
+    logAtualizacao("⚠️ Token indisponível. Tentando renovar...", 'warn');
     if (!refreshAccessToken()) {
-        logAtualizacao("❌ Não foi possível renovar o token.");
+        logAtualizacao("❌ Não foi possível renovar o token.", 'error');
         exit;
     }
     $access_token = getAccessToken();
     if (!$access_token) {
-        logAtualizacao("❌ Access token ainda indisponível após renovação.");
+        logAtualizacao("❌ Access token ainda indisponível após renovação.", 'error');
         exit;
     }
 }
 
-logAtualizacao("✅ Token carregado.");
+logAtualizacao("✅ Token carregado.", 'success');
 
 $blingBase = 'https://bling.com.br/Api/v3';
 
@@ -99,7 +143,11 @@ function extrairHeaders(string $headersRaw): array
 
 function executarRequisicaoBling(string $url, string $contexto, int $tentativa = 0)
 {
-    global $access_token;
+    global $access_token, $requestDelaySeconds;
+
+    if ($requestDelaySeconds > 0) {
+        sleep($requestDelaySeconds);
+    }
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -110,17 +158,19 @@ function executarRequisicaoBling(string $url, string $contexto, int $tentativa =
             "Content-Type: application/json"
         ],
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 30
+        CURLOPT_TIMEOUT => 45
     ]);
 
     $rawResponse = curl_exec($ch);
     $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    $curlError = curl_error($ch);
     curl_close($ch);
 
     if ($rawResponse === false) {
         $headersRaw = '';
         $body = '';
+        logAtualizacao("⚠️ Erro de conexão ao {$contexto}: {$curlError}", 'warn');
     } else {
         $headersRaw = substr($rawResponse, 0, $headerSize);
         $body = substr($rawResponse, $headerSize);
@@ -128,7 +178,7 @@ function executarRequisicaoBling(string $url, string $contexto, int $tentativa =
     $headers = extrairHeaders($headersRaw);
 
     if ($httpcode === 401 && $tentativa < 2) {
-        logAtualizacao("⚠️ Token expirado ao {$contexto}. Renovando...");
+        logAtualizacao("⚠️ Token expirado ao {$contexto}. Renovando...", 'warn');
         if (refreshAccessToken()) {
             $novoToken = getAccessToken();
             if ($novoToken) {
@@ -136,7 +186,7 @@ function executarRequisicaoBling(string $url, string $contexto, int $tentativa =
                 return executarRequisicaoBling($url, $contexto, $tentativa + 1);
             }
         }
-        logAtualizacao("❌ Falha ao renovar token durante {$contexto}.");
+        logAtualizacao("❌ Falha ao renovar token durante {$contexto}.", 'error');
     }
 
     if ($httpcode === 429 && $tentativa < 5) {
@@ -144,8 +194,15 @@ function executarRequisicaoBling(string $url, string $contexto, int $tentativa =
         if ($retryAfter <= 0) {
             $retryAfter = min(60, (int) pow(2, $tentativa + 1));
         }
-        logAtualizacao("⏳ Limite de requisições atingido ao {$contexto}. Aguardando {$retryAfter}s para tentar novamente...");
+        logAtualizacao("⏳ Limite de requisições atingido ao {$contexto}. Aguardando {$retryAfter}s para tentar novamente...", 'warn');
         sleep($retryAfter);
+        return executarRequisicaoBling($url, $contexto, $tentativa + 1);
+    }
+
+    if ($httpcode >= 500 && $httpcode < 600 && $tentativa < 4) {
+        $espera = max($requestDelaySeconds, min(60, ($tentativa + 1) * $requestDelaySeconds));
+        logAtualizacao("⚠️ Erro {$httpcode} ao {$contexto}. Repetindo após {$espera}s...", 'warn');
+        sleep($espera);
         return executarRequisicaoBling($url, $contexto, $tentativa + 1);
     }
 
@@ -234,44 +291,57 @@ function extrairGtinProduto(array $dadosProduto): ?string
 
 $pagina = 1;
 $totalInseridos = 0;
+$totalGtinsAtualizados = 0;
+$totalDetalhesFalhos = 0;
+$idsEncontrados = [];
 
 do {
     [$httpcode, $response] = buscarPaginaProdutos($pagina);
 
     if ($httpcode !== 200) {
-        logAtualizacao("❌ Erro ao buscar página $pagina: HTTP $httpcode");
-        logAtualizacao("⏳ Tentando novamente após 5s...");
-        sleep(5);
+        logAtualizacao("❌ Erro ao buscar página $pagina: HTTP $httpcode", 'error');
+        $retryWait = max(5, $requestDelaySeconds);
+        logAtualizacao("⏳ Tentando novamente após {$retryWait}s...", 'warn');
+        sleep($retryWait);
         continue;
     }
 
     $dados = json_decode($response, true);
+    if ($dados === null && json_last_error() !== JSON_ERROR_NONE) {
+        $erroJson = json_last_error_msg();
+        logAtualizacao("❌ Erro ao interpretar resposta da página {$pagina}: {$erroJson}", 'error');
+        $retryWait = max(5, $requestDelaySeconds);
+        logAtualizacao("⏳ Tentando novamente após {$retryWait}s...", 'warn');
+        sleep($retryWait);
+        continue;
+    }
     $produtos = $dados['data'] ?? [];
 
-    logAtualizacao("📦 Página $pagina - " . count($produtos) . " produtos");
+    logAtualizacao("📦 Página $pagina - " . count($produtos) . " produtos", 'info');
 
-    if (empty($produtos)) break;
+    if (empty($produtos)) {
+        if ($pagina === 1) {
+            logAtualizacao('ℹ️ Nenhum produto foi retornado pela API.', 'info');
+        } else {
+            logAtualizacao("ℹ️ Nenhum produto adicional a partir da página {$pagina}.", 'info');
+        }
+        break;
+    }
 
     foreach ($produtos as $p) {
         $id = (string) ($p['id'] ?? '');
         $codigo = isset($p['codigo']) ? (string) $p['codigo'] : '';
         $nome = isset($p['nome']) ? (string) $p['nome'] : '';
         if ($id === '') {
-            logAtualizacao('⚠️ Produto retornado sem ID válido, ignorando registro.');
+            logAtualizacao('⚠️ Produto retornado sem ID válido, ignorando registro.', 'warn');
             continue;
         }
+
+        $idsEncontrados[$id] = true;
 
         $preco = isset($p['preco']) ? (float) $p['preco'] : 0.00;
         $urlImg = $p['imagemURL'] ?? ($p['imagem'] ?? null);
         $localImg = null;
-
-        $gtinAtual = null;
-        $gtinConsulta = $db->prepare('SELECT gtin FROM produtos WHERE id = :id LIMIT 1');
-        $gtinConsulta->bindValue(':id', $id);
-        $resultadoGtin = $gtinConsulta->execute();
-        if ($resultadoGtin && ($linhaGtin = $resultadoGtin->fetchArray(SQLITE3_ASSOC))) {
-            $gtinAtual = $linhaGtin['gtin'];
-        }
 
         if ($urlImg && filter_var($urlImg, FILTER_VALIDATE_URL)) {
             $path = parse_url($urlImg, PHP_URL_PATH) ?? '';
@@ -284,14 +354,14 @@ do {
 
             $pastaProduto = $imagensPath . '/' . $id;
             if (!is_dir($pastaProduto) && !mkdir($pastaProduto, 0777, true) && !is_dir($pastaProduto)) {
-                logAtualizacao("⚠️ Não foi possível criar a pasta de imagens para o produto $id");
+                logAtualizacao("⚠️ Não foi possível criar a pasta de imagens para o produto $id", 'warn');
             } else {
                 $destino = $pastaProduto . '/' . $nomeArquivo;
 
                 if (!file_exists($destino)) {
                     if (!downloadImagem($urlImg, $destino)) {
                         $localImg = null;
-                        logAtualizacao("⚠️ Falha ao baixar imagem do produto $id");
+                        logAtualizacao("⚠️ Falha ao baixar imagem do produto $id", 'warn');
                     } else {
                         $localImg = $id . '/' . $nomeArquivo;
                     }
@@ -356,6 +426,11 @@ do {
         [$detalheStatus, $detalheResposta] = buscarDetalheProduto($id);
         if ($detalheStatus === 200) {
             $detalhes = json_decode($detalheResposta, true);
+            if ($detalhes === null && json_last_error() !== JSON_ERROR_NONE) {
+                logAtualizacao("❌ Falha ao interpretar detalhes do produto {$id}: " . json_last_error_msg(), 'error');
+                $totalDetalhesFalhos++;
+                continue;
+            }
             $dadosProduto = $detalhes['data'] ?? null;
             if (is_array($dadosProduto)) {
                 $gtin = extrairGtinProduto($dadosProduto);
@@ -365,22 +440,55 @@ do {
                     $update->bindValue(':gtin', $gtin);
                     $update->bindValue(':id', $id);
                     $update->execute();
+                    $totalGtinsAtualizados++;
+                    logAtualizacao("✅ GTIN atualizado para o produto {$id}.", 'success');
                 } else {
-                    logAtualizacao("ℹ️ Produto {$id} sem GTIN informado no Bling.");
+                    logAtualizacao("ℹ️ Produto {$id} sem GTIN informado no Bling.", 'info');
                 }
             } else {
-                logAtualizacao("⚠️ Resposta inesperada ao obter detalhes do produto {$id}.");
+                logAtualizacao("⚠️ Resposta inesperada ao obter detalhes do produto {$id}.", 'warn');
+                $totalDetalhesFalhos++;
             }
         } else {
-            logAtualizacao("⚠️ Não foi possível obter detalhes do produto {$id}. HTTP {$detalheStatus}");
+            logAtualizacao("⚠️ Não foi possível obter detalhes do produto {$id}. HTTP {$detalheStatus}", 'warn');
+            $totalDetalhesFalhos++;
         }
-
-        usleep(200000);
     }
 
     $pagina++;
-    usleep(400000);
 
 } while (true);
 
-logAtualizacao("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos");
+$idsAtivos = array_keys($idsEncontrados);
+$idsExistentes = [];
+$resultadoIds = $db->query('SELECT id FROM produtos');
+while ($resultadoIds && ($row = $resultadoIds->fetchArray(SQLITE3_ASSOC))) {
+    $idsExistentes[] = (string) $row['id'];
+}
+
+$paraRemover = array_diff($idsExistentes, $idsAtivos);
+$totalRemovidos = 0;
+if (!empty($paraRemover)) {
+    $deleteStmt = $db->prepare('DELETE FROM produtos WHERE id = :id');
+    foreach ($paraRemover as $idRemover) {
+        $deleteStmt->reset();
+        $deleteStmt->bindValue(':id', $idRemover);
+        if ($deleteStmt->execute()) {
+            $totalRemovidos++;
+        }
+    }
+}
+
+if ($totalRemovidos > 0) {
+    logAtualizacao("🗑️ Produtos removidos por não estarem mais na API: {$totalRemovidos}", 'warn');
+} else {
+    logAtualizacao('ℹ️ Nenhum produto precisou ser removido nesta sincronização.', 'info');
+}
+
+logAtualizacao("📊 GTIN atualizados: {$totalGtinsAtualizados} | detalhes com falha: {$totalDetalhesFalhos}", 'info');
+logAtualizacao("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos", 'success');
+
+if (!$isCli) {
+    echo '</div><p style="margin-top:16px;font-size:12px;color:#8b949e;">Processo finalizado em ' . date('d/m/Y H:i:s') . '.</p></div></body></html>';
+    flushOutput();
+}
