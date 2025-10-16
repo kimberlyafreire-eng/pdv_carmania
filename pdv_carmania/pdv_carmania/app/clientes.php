@@ -121,8 +121,8 @@ if (!isset($_SESSION['usuario'])) {
           </div>
 
           <div class="col-12 col-md-6">
-            <label for="tipoPessoa" class="form-label required">Pessoa</label>
-            <select class="form-select" id="tipoPessoa" name="tipoPessoa" required>
+            <label for="tipoPessoa" class="form-label">Pessoa</label>
+            <select class="form-select" id="tipoPessoa" name="tipoPessoa">
               <option value="">Selecione...</option>
               <option value="F">Física</option>
               <option value="J">Jurídica</option>
@@ -130,8 +130,8 @@ if (!isset($_SESSION['usuario'])) {
           </div>
 
           <div class="col-12 col-md-6">
-            <label for="documento" class="form-label required">CPF/CNPJ</label>
-            <input type="text" class="form-control" id="documento" name="documento" required placeholder="Somente números" maxlength="18" />
+            <label for="documento" class="form-label">CPF/CNPJ</label>
+            <input type="text" class="form-control" id="documento" name="documento" placeholder="Somente números" maxlength="18" />
           </div>
 
           <div class="col-12 col-md-6">
@@ -185,6 +185,8 @@ if (!isset($_SESSION['usuario'])) {
     const btnNovoCliente = document.getElementById('btnNovoCliente');
     const btnRecarregar = document.getElementById('btnRecarregar');
     const buscaClienteInput = document.getElementById('buscaCliente');
+    const tipoPessoaSelect = document.getElementById('tipoPessoa');
+    const documentoInput = document.getElementById('documento');
 
     let clientes = [];
     let clienteSelecionado = null;
@@ -214,8 +216,8 @@ if (!isset($_SESSION['usuario'])) {
         const tamanhoDoc = cliente.numeroDocumento.replace(/\D+/g, '').length;
         tipo = tamanhoDoc > 11 ? 'J' : 'F';
       }
-      document.getElementById('tipoPessoa').value = tipo || '';
-      document.getElementById('documento').value = cliente?.numeroDocumento || '';
+      tipoPessoaSelect.value = tipo || '';
+      documentoInput.value = cliente?.numeroDocumento || '';
       document.getElementById('celular').value = cliente?.celular || '';
       document.getElementById('telefone').value = cliente?.telefone || '';
 
@@ -231,7 +233,8 @@ if (!isset($_SESSION['usuario'])) {
       clienteSelecionado = null;
       formCliente.reset();
       document.getElementById('clienteId').value = '';
-      document.getElementById('tipoPessoa').value = '';
+      tipoPessoaSelect.value = '';
+      tipoPessoaSelect.setCustomValidity('');
       formCliente.classList.remove('was-validated');
       limparMensagem();
     }
@@ -349,15 +352,27 @@ if (!isset($_SESSION['usuario'])) {
 
     formCliente.addEventListener('submit', async (event) => {
       event.preventDefault();
+      formCliente.classList.add('was-validated');
+      tipoPessoaSelect.setCustomValidity('');
+      const documento = formatarDocumento(documentoInput.value);
+      const tipoPessoaSelecionado = tipoPessoaSelect.value;
+      if (documento && !tipoPessoaSelecionado) {
+        tipoPessoaSelect.setCustomValidity('Selecione o tipo de pessoa ao informar CPF/CNPJ.');
+      }
+
       if (!formCliente.reportValidity()) {
+        if (tipoPessoaSelect.validationMessage) {
+          setMensagem('warning', tipoPessoaSelect.validationMessage);
+          tipoPessoaSelect.focus();
+        }
         return;
       }
 
       const dados = {
         id: document.getElementById('clienteId').value,
         nome: document.getElementById('nome').value.trim(),
-        tipoPessoa: document.getElementById('tipoPessoa').value,
-        documento: formatarDocumento(document.getElementById('documento').value),
+        tipoPessoa: tipoPessoaSelecionado,
+        documento,
         celular: document.getElementById('celular').value.trim(),
         telefone: document.getElementById('telefone').value.trim(),
         endereco: document.getElementById('endereco').value.trim(),
@@ -368,7 +383,6 @@ if (!isset($_SESSION['usuario'])) {
       };
 
       try {
-        formCliente.classList.add('was-validated');
         const resultado = await salvarCliente(dados);
         setMensagem('success', resultado.mensagem || 'Cliente salvo com sucesso.');
         const clienteRetornado = resultado.cliente;
