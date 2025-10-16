@@ -194,9 +194,14 @@ do {
     if (empty($produtos)) break;
 
     foreach ($produtos as $p) {
-        $id = $db->escapeString($p['id']);
-        $codigo = $db->escapeString($p['codigo']);
-        $nome = $db->escapeString($p['nome']);
+        $id = (string) ($p['id'] ?? '');
+        $codigo = isset($p['codigo']) ? (string) $p['codigo'] : '';
+        $nome = isset($p['nome']) ? (string) $p['nome'] : '';
+        if ($id === '') {
+            logAtualizacao('⚠️ Produto retornado sem ID válido, ignorando registro.');
+            continue;
+        }
+
         $preco = isset($p['preco']) ? (float) $p['preco'] : 0.00;
         $urlImg = $p['imagemURL'] ?? ($p['imagem'] ?? null);
         $localImg = null;
@@ -237,20 +242,33 @@ do {
             }
         }
 
-        $stmt = $db->prepare("INSERT OR REPLACE INTO produtos
-            (id, codigo, nome, preco, imagem_url, imagem_local, gtin)
-            VALUES (:id, :codigo, :nome, :preco, :url, :local, :gtin)");
+        $stmt = $db->prepare(
+            'INSERT INTO produtos (id, codigo, nome, preco, imagem_url, imagem_local, gtin)
+             VALUES (:id, :codigo, :nome, :preco, :url, :local, :gtin)
+             ON CONFLICT(id) DO UPDATE SET
+                codigo = excluded.codigo,
+                nome = excluded.nome,
+                preco = excluded.preco,
+                imagem_url = excluded.imagem_url,
+                imagem_local = COALESCE(excluded.imagem_local, produtos.imagem_local),
+                gtin = COALESCE(excluded.gtin, produtos.gtin)'
+        );
         $stmt->bindValue(':id', $id);
         $stmt->bindValue(':codigo', $codigo);
         $stmt->bindValue(':nome', $nome);
         $stmt->bindValue(':preco', $preco);
-        $stmt->bindValue(':url', $urlImg);
-        $stmt->bindValue(':local', $localImg);
-        if ($gtinAtual === null || $gtinAtual === '') {
-            $stmt->bindValue(':gtin', null, SQLITE3_NULL);
+        if ($urlImg === null) {
+            $stmt->bindValue(':url', null, SQLITE3_NULL);
         } else {
-            $stmt->bindValue(':gtin', $gtinAtual);
+            $stmt->bindValue(':url', $urlImg);
         }
+
+        if ($localImg === null) {
+            $stmt->bindValue(':local', null, SQLITE3_NULL);
+        } else {
+            $stmt->bindValue(':local', $localImg);
+        }
+        $stmt->bindValue(':gtin', null, SQLITE3_NULL);
         $stmt->execute();
 
         $totalInseridos++;
