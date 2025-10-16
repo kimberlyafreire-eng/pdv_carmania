@@ -187,8 +187,26 @@ while (true) {
     $pagina++;
 }
 
-// Atualiza o cache JSON com os dados completos retornados pelo Bling.
-$cacheJson = json_encode(['data' => $todosClientes], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+// Normaliza os clientes para evitar dados quebrados no front-end.
+$clientesNormalizados = [];
+foreach ($todosClientes as $clienteBruto) {
+    if (!is_array($clienteBruto)) {
+        continue;
+    }
+    $clienteNormalizado = normalizarClienteParaResposta($clienteBruto);
+    if ($clienteNormalizado === null) {
+        continue;
+    }
+    $clientesNormalizados[$clienteNormalizado['id']] = $clienteNormalizado;
+}
+
+$clientesNormalizados = array_values($clientesNormalizados);
+usort($clientesNormalizados, static function (array $a, array $b): int {
+    return strcasecmp($a['nome'], $b['nome']);
+});
+
+// Atualiza o cache JSON com os dados normalizados.
+$cacheJson = json_encode(['data' => $clientesNormalizados], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 if ($cacheJson === false) {
     http_response_code(500);
     echo json_encode(["erro" => "Falha ao preparar cache de clientes"]);
@@ -202,7 +220,7 @@ if (file_put_contents($caminhoCache, $cacheJson, LOCK_EX) === false) {
     error_log('[clientes.php] Não foi possível gravar o clientes-cache.json.');
 }
 
-$dadosResposta = ['data' => $todosClientes];
+$dadosResposta = ['data' => $clientesNormalizados];
 
 if ($db instanceof SQLite3) {
     try {
@@ -214,6 +232,10 @@ if ($db instanceof SQLite3) {
     } catch (Throwable $e) {
         error_log('[clientes.php] Falha ao sincronizar banco local: ' . $e->getMessage());
     }
+}
+
+if (empty($dadosResposta['data'])) {
+    $dadosResposta = ['data' => $clientesNormalizados];
 }
 
 $payload = json_encode($dadosResposta, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
