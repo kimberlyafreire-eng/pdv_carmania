@@ -125,8 +125,53 @@ $db->exec("CREATE TABLE IF NOT EXISTS produtos (
     nome TEXT,
     preco REAL,
     imagem_url TEXT,
-    imagem_local TEXT
+    imagem_local TEXT,
+    gtin TEXT
 )");
+
+$colunas = [];
+$colunasQuery = $db->query('PRAGMA table_info(produtos)');
+while ($colunasQuery && ($row = $colunasQuery->fetchArray(SQLITE3_ASSOC))) {
+    $colunas[] = $row['name'];
+}
+
+if (!in_array('gtin', $colunas, true)) {
+    $db->exec('ALTER TABLE produtos ADD COLUMN gtin TEXT');
+}
+
+function buscarDetalheProduto(string $produtoId, int $tentativa = 0)
+{
+    global $blingBase, $access_token;
+
+    $url = rtrim($blingBase, '/') . "/produtos/{$produtoId}";
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "Authorization: Bearer {$access_token}",
+            "Content-Type: application/json"
+        ],
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 30
+    ]);
+
+    $response = curl_exec($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpcode === 401 && $tentativa < 1) {
+        logAtualizacao("⚠️ Token expirado ao buscar detalhes do produto {$produtoId}. Renovando...");
+        if (refreshAccessToken()) {
+            $access_token = getAccessToken();
+            if ($access_token) {
+                return buscarDetalheProduto($produtoId, $tentativa + 1);
+            }
+        }
+        logAtualizacao("❌ Falha ao renovar token durante a obtenção de detalhes do produto {$produtoId}.");
+    }
+
+    return [$httpcode, $response];
+}
 
 $pagina = 1;
 $totalInseridos = 0;
@@ -149,9 +194,14 @@ do {
     if (empty($produtos)) break;
 
     foreach ($produtos as $p) {
-        $id = $db->escapeString($p['id']);
-        $codigo = $db->escapeString($p['codigo']);
-        $nome = $db->escapeString($p['nome']);
+        $id = (string) ($p['id'] ?? '');
+        $codigo = isset($p['codigo']) ? (string) $p['codigo'] : '';
+        $nome = isset($p['nome']) ? (string) $p['nome'] : '';
+        if ($id === '') {
+            logAtualizacao('⚠️ Produto retornado sem ID válido, ignorando registro.');
+            continue;
+        }
+
         $preco = isset($p['preco']) ? (float) $p['preco'] : 0.00;
         $urlImg = $p['imagemURL'] ?? ($p['imagem'] ?? null);
         $localImg = null;
@@ -184,18 +234,63 @@ do {
             }
         }
 
-        $stmt = $db->prepare("INSERT OR REPLACE INTO produtos
-            (id, codigo, nome, preco, imagem_url, imagem_local) 
-            VALUES (:id, :codigo, :nome, :preco, :url, :local)");
+        $stmt = $db->prepare(
+            'INSERT INTO produtos (id, codigo, nome, preco, imagem_url, imagem_local, gtin)
+             VALUES (:id, :codigo, :nome, :preco, :url, :local, :gtin)
+             ON CONFLICT(id) DO UPDATE SET
+                codigo = excluded.codigo,
+                nome = excluded.nome,
+                preco = excluded.preco,
+                imagem_url = excluded.imagem_url,
+                imagem_local = COALESCE(excluded.imagem_local, produtos.imagem_local),
+                gtin = COALESCE(excluded.gtin, produtos.gtin)'
+        );
         $stmt->bindValue(':id', $id);
         $stmt->bindValue(':codigo', $codigo);
         $stmt->bindValue(':nome', $nome);
         $stmt->bindValue(':preco', $preco);
-        $stmt->bindValue(':url', $urlImg);
-        $stmt->bindValue(':local', $localImg);
+        if ($urlImg === null) {
+            $stmt->bindValue(':url', null, SQLITE3_NULL);
+        } else {
+            $stmt->bindValue(':url', $urlImg);
+        }
+
+        if ($localImg === null) {
+            $stmt->bindValue(':local', null, SQLITE3_NULL);
+        } else {
+            $stmt->bindValue(':local', $localImg);
+        }
+        $stmt->bindValue(':gtin', null, SQLITE3_NULL);
         $stmt->execute();
 
         $totalInseridos++;
+
+        [$detalheStatus, $detalheResposta] = buscarDetalheProduto($id);
+        if ($detalheStatus === 200) {
+            $detalhes = json_decode($detalheResposta, true);
+            $dadosProduto = $detalhes['data'] ?? null;
+            if (is_array($dadosProduto)) {
+                $gtin = $dadosProduto['gtin']
+                    ?? $dadosProduto['codigoBarras']
+                    ?? ($dadosProduto['variacoes'][0]['gtin'] ?? null)
+                    ?? ($dadosProduto['variacoes'][0]['codigoBarras'] ?? null);
+
+                if ($gtin) {
+                    $update = $db->prepare('UPDATE produtos SET gtin = :gtin WHERE id = :id');
+                    $update->bindValue(':gtin', $gtin);
+                    $update->bindValue(':id', $id);
+                    $update->execute();
+                } else {
+                    logAtualizacao("ℹ️ Produto {$id} sem GTIN informado no Bling.");
+                }
+            } else {
+                logAtualizacao("⚠️ Resposta inesperada ao obter detalhes do produto {$id}.");
+            }
+        } else {
+            logAtualizacao("⚠️ Não foi possível obter detalhes do produto {$id}. HTTP {$detalheStatus}");
+        }
+
+        usleep(200000);
     }
 
     $pagina++;
