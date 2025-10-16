@@ -206,6 +206,14 @@ do {
         $urlImg = $p['imagemURL'] ?? ($p['imagem'] ?? null);
         $localImg = null;
 
+        $gtinAtual = null;
+        $gtinConsulta = $db->prepare('SELECT gtin FROM produtos WHERE id = :id LIMIT 1');
+        $gtinConsulta->bindValue(':id', $id);
+        $resultadoGtin = $gtinConsulta->execute();
+        if ($resultadoGtin && ($linhaGtin = $resultadoGtin->fetchArray(SQLITE3_ASSOC))) {
+            $gtinAtual = $linhaGtin['gtin'];
+        }
+
         if ($urlImg && filter_var($urlImg, FILTER_VALIDATE_URL)) {
             $path = parse_url($urlImg, PHP_URL_PATH) ?? '';
             $nomeArquivo = basename($path) ?: ($id . '.jpg');
