@@ -83,14 +83,28 @@ logAtualizacao("✅ Token carregado.");
 
 $blingBase = 'https://bling.com.br/Api/v3';
 
-function buscarPaginaProdutos(int $pagina, int $tentativa = 0)
+function extrairHeaders(string $headersRaw): array
 {
-    global $blingBase, $access_token;
+    $headers = [];
+    foreach (preg_split('/\r?\n/', $headersRaw) as $line) {
+        if (strpos($line, ':') === false) {
+            continue;
+        }
+        [$key, $value] = explode(':', $line, 2);
+        $headers[strtolower(trim($key))] = trim($value);
+    }
 
-    $url = rtrim($blingBase, '/') . "/produtos?pagina={$pagina}&limite=100";
+    return $headers;
+}
+
+function executarRequisicaoBling(string $url, string $contexto, int $tentativa = 0)
+{
+    global $access_token;
+
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HEADER => true,
         CURLOPT_HTTPHEADER => [
             "Authorization: Bearer {$access_token}",
             "Content-Type: application/json"
@@ -99,22 +113,52 @@ function buscarPaginaProdutos(int $pagina, int $tentativa = 0)
         CURLOPT_TIMEOUT => 30
     ]);
 
-    $response = curl_exec($ch);
+    $rawResponse = curl_exec($ch);
     $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
     curl_close($ch);
 
-    if ($httpcode === 401 && $tentativa < 1) {
-        logAtualizacao("⚠️ Token expirado ao buscar página {$pagina}. Renovando...");
+    if ($rawResponse === false) {
+        $headersRaw = '';
+        $body = '';
+    } else {
+        $headersRaw = substr($rawResponse, 0, $headerSize);
+        $body = substr($rawResponse, $headerSize);
+    }
+    $headers = extrairHeaders($headersRaw);
+
+    if ($httpcode === 401 && $tentativa < 2) {
+        logAtualizacao("⚠️ Token expirado ao {$contexto}. Renovando...");
         if (refreshAccessToken()) {
-            $access_token = getAccessToken();
-            if ($access_token) {
-                return buscarPaginaProdutos($pagina, $tentativa + 1);
+            $novoToken = getAccessToken();
+            if ($novoToken) {
+                $access_token = $novoToken;
+                return executarRequisicaoBling($url, $contexto, $tentativa + 1);
             }
         }
-        logAtualizacao("❌ Falha ao renovar token durante a sincronização.");
+        logAtualizacao("❌ Falha ao renovar token durante {$contexto}.");
     }
 
-    return [$httpcode, $response];
+    if ($httpcode === 429 && $tentativa < 5) {
+        $retryAfter = isset($headers['retry-after']) ? (int)$headers['retry-after'] : 0;
+        if ($retryAfter <= 0) {
+            $retryAfter = min(60, (int) pow(2, $tentativa + 1));
+        }
+        logAtualizacao("⏳ Limite de requisições atingido ao {$contexto}. Aguardando {$retryAfter}s para tentar novamente...");
+        sleep($retryAfter);
+        return executarRequisicaoBling($url, $contexto, $tentativa + 1);
+    }
+
+    return [$httpcode, $body];
+}
+
+function buscarPaginaProdutos(int $pagina)
+{
+    global $blingBase;
+
+    $url = rtrim($blingBase, '/') . "/produtos?pagina={$pagina}&limite=100";
+
+    return executarRequisicaoBling($url, "buscar página {$pagina}");
 }
 
 // CONECTAR OU CRIAR BANCO DE DADOS
@@ -139,38 +183,53 @@ if (!in_array('gtin', $colunas, true)) {
     $db->exec('ALTER TABLE produtos ADD COLUMN gtin TEXT');
 }
 
-function buscarDetalheProduto(string $produtoId, int $tentativa = 0)
+function buscarDetalheProduto(string $produtoId)
 {
-    global $blingBase, $access_token;
+    global $blingBase;
 
     $url = rtrim($blingBase, '/') . "/produtos/{$produtoId}";
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => [
-            "Authorization: Bearer {$access_token}",
-            "Content-Type: application/json"
-        ],
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 30
-    ]);
 
-    $response = curl_exec($ch);
-    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    return executarRequisicaoBling($url, "buscar detalhes do produto {$produtoId}");
+}
 
-    if ($httpcode === 401 && $tentativa < 1) {
-        logAtualizacao("⚠️ Token expirado ao buscar detalhes do produto {$produtoId}. Renovando...");
-        if (refreshAccessToken()) {
-            $access_token = getAccessToken();
-            if ($access_token) {
-                return buscarDetalheProduto($produtoId, $tentativa + 1);
-            }
+function extrairGtinProduto(array $dadosProduto): ?string
+{
+    $candidatos = [
+        $dadosProduto['gtin'] ?? null,
+        $dadosProduto['gtinEmbalagem'] ?? null,
+        $dadosProduto['codigoBarras'] ?? null
+    ];
+
+    foreach ($candidatos as $valor) {
+        $valor = is_string($valor) ? trim($valor) : $valor;
+        if (!empty($valor)) {
+            return $valor;
         }
-        logAtualizacao("❌ Falha ao renovar token durante a obtenção de detalhes do produto {$produtoId}.");
     }
 
-    return [$httpcode, $response];
+    if (!empty($dadosProduto['variacoes']) && is_array($dadosProduto['variacoes'])) {
+        foreach ($dadosProduto['variacoes'] as $variacao) {
+            if (!is_array($variacao)) {
+                continue;
+            }
+
+            $candidatosVariacao = [
+                $variacao['gtin'] ?? null,
+                $variacao['gtinEmbalagem'] ?? null,
+                $variacao['codigoBarras'] ?? null,
+                $variacao['codigo'] ?? null
+            ];
+
+            foreach ($candidatosVariacao as $valor) {
+                $valor = is_string($valor) ? trim($valor) : $valor;
+                if (!empty($valor)) {
+                    return $valor;
+                }
+            }
+        }
+    }
+
+    return null;
 }
 
 $pagina = 1;
@@ -299,10 +358,7 @@ do {
             $detalhes = json_decode($detalheResposta, true);
             $dadosProduto = $detalhes['data'] ?? null;
             if (is_array($dadosProduto)) {
-                $gtin = $dadosProduto['gtin']
-                    ?? $dadosProduto['codigoBarras']
-                    ?? ($dadosProduto['variacoes'][0]['gtin'] ?? null)
-                    ?? ($dadosProduto['variacoes'][0]['codigoBarras'] ?? null);
+                $gtin = extrairGtinProduto($dadosProduto);
 
                 if ($gtin) {
                     $update = $db->prepare('UPDATE produtos SET gtin = :gtin WHERE id = :id');
