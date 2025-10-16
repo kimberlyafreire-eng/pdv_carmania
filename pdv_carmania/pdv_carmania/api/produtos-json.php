@@ -63,7 +63,20 @@ if (!function_exists('resolverImagemProduto')) {
 try {
     $db = new SQLite3($dbFile);
 
-    $result = $db->query("SELECT id, codigo, nome, preco, imagem_local FROM produtos");
+    $colunasDisponiveis = [];
+    $colunasQuery = $db->query('PRAGMA table_info(produtos)');
+    while ($colunasQuery && ($row = $colunasQuery->fetchArray(SQLITE3_ASSOC))) {
+        $colunasDisponiveis[] = $row['name'];
+    }
+
+    $temGtin = in_array('gtin', $colunasDisponiveis, true);
+
+    $colunasSelect = ['id', 'codigo', 'nome', 'preco', 'imagem_local'];
+    if ($temGtin) {
+        $colunasSelect[] = 'gtin';
+    }
+
+    $result = $db->query('SELECT ' . implode(', ', $colunasSelect) . ' FROM produtos');
 
     $produtos = [];
     while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
@@ -72,7 +85,8 @@ try {
             'codigo' => $row['codigo'],
             'nome' => $row['nome'],
             'preco' => (float) $row['preco'],
-            'imagemURL' => resolverImagemProduto($row, $baseImagemDir, $baseImagemUrl)
+            'imagemURL' => resolverImagemProduto($row, $baseImagemDir, $baseImagemUrl),
+            'gtin' => $temGtin ? ($row['gtin'] ?? null) : null
         ];
     }
 
