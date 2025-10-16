@@ -9,7 +9,8 @@ $dbFile      = __DIR__ . '/../db/produtos.db';
 $imagensPath = __DIR__ . '/../imagens';
 $logDir      = __DIR__ . '/../logs';
 $logFile     = $logDir . '/atualizar.log';
-$requestDelaySeconds = 5;
+$requestDelaySeconds = 3;
+$progressFile = __DIR__ . '/../cache/atualizar-produtos-progress.json';
 
 $isCli = PHP_SAPI === 'cli';
 $logEntries = [];
@@ -40,6 +41,44 @@ if (!$isCli) {
 if (!is_dir(dirname($dbFile))) mkdir(dirname($dbFile), 0777, true);
 if (!is_dir($imagensPath)) mkdir($imagensPath, 0777, true);
 if (!is_dir($logDir)) mkdir($logDir, 0777, true);
+if (!is_dir(dirname($progressFile))) mkdir(dirname($progressFile), 0777, true);
+
+function carregarProgresso(string $arquivo): ?string
+{
+    if (!file_exists($arquivo)) {
+        return null;
+    }
+
+    $conteudo = file_get_contents($arquivo);
+    if ($conteudo === false) {
+        return null;
+    }
+
+    $dados = json_decode($conteudo, true);
+    if (!is_array($dados)) {
+        return null;
+    }
+
+    $ultimoId = $dados['last_processed_id'] ?? null;
+    return is_string($ultimoId) && $ultimoId !== '' ? $ultimoId : null;
+}
+
+function salvarProgresso(string $arquivo, ?string $produtoId): void
+{
+    if ($produtoId === null) {
+        if (file_exists($arquivo)) {
+            @unlink($arquivo);
+        }
+        return;
+    }
+
+    $dados = [
+        'last_processed_id' => $produtoId,
+        'updated_at' => date('c')
+    ];
+
+    file_put_contents($arquivo, json_encode($dados, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+}
 
 function logAtualizacao($msg, string $nivel = 'info') {
     global $logFile, $isCli, $logEntries;
@@ -102,6 +141,12 @@ function downloadImagem(string $url, string $destino): bool {
 }
 
 logAtualizacao("🔁 Iniciando atualização de produtos...");
+
+$resumeFromId = carregarProgresso($progressFile);
+$aguardandoRetomar = is_string($resumeFromId) && $resumeFromId !== '';
+if ($aguardandoRetomar) {
+    logAtualizacao("⏩ Retomada configurada para continuar após o produto {$resumeFromId}.", 'info');
+}
 
 if (!file_exists($tokenFile)) {
     logAtualizacao("❌ Token não encontrado. Execute o auth.php manualmente.", 'error');
@@ -339,6 +384,16 @@ do {
 
         $idsEncontrados[$id] = true;
 
+        if ($aguardandoRetomar) {
+            if ($id === $resumeFromId) {
+                $aguardandoRetomar = false;
+                logAtualizacao("▶️ Produto {$id} foi o último processado. Continuando a partir do próximo.", 'info');
+                continue;
+            }
+
+            continue;
+        }
+
         $preco = isset($p['preco']) ? (float) $p['preco'] : 0.00;
         $urlImg = $p['imagemURL'] ?? ($p['imagem'] ?? null);
         $localImg = null;
@@ -423,6 +478,8 @@ do {
 
         $totalInseridos++;
 
+        salvarProgresso($progressFile, $id);
+
         [$detalheStatus, $detalheResposta] = buscarDetalheProduto($id);
         if ($detalheStatus === 200) {
             $detalhes = json_decode($detalheResposta, true);
@@ -459,6 +516,11 @@ do {
 
 } while (true);
 
+if ($aguardandoRetomar) {
+    logAtualizacao("⚠️ O produto salvo para retomada ({$resumeFromId}) não foi encontrado na lista atual. Um novo ciclo completo será executado da próxima vez.", 'warn');
+    salvarProgresso($progressFile, null);
+}
+
 $idsAtivos = array_keys($idsEncontrados);
 $idsExistentes = [];
 $resultadoIds = $db->query('SELECT id FROM produtos');
@@ -487,6 +549,8 @@ if ($totalRemovidos > 0) {
 
 logAtualizacao("📊 GTIN atualizados: {$totalGtinsAtualizados} | detalhes com falha: {$totalDetalhesFalhos}", 'info');
 logAtualizacao("✅ Atualização concluída. Total de produtos inseridos/atualizados: $totalInseridos", 'success');
+
+salvarProgresso($progressFile, null);
 
 if (!$isCli) {
     echo '</div><p style="margin-top:16px;font-size:12px;color:#8b949e;">Processo finalizado em ' . date('d/m/Y H:i:s') . '.</p></div></body></html>';
