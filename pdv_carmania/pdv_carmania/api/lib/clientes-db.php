@@ -57,7 +57,7 @@ function upsertCliente(SQLite3 $db, array $cliente): void
 {
     static $stmt = null;
 
-    if ($stmt === null) {
+    if (!$stmt instanceof SQLite3Stmt) {
         $stmt = $db->prepare('INSERT INTO clientes (
                 id, nome, tipo, numero_documento, celular, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
             ) VALUES (
@@ -76,8 +76,10 @@ function upsertCliente(SQLite3 $db, array $cliente): void
                 estado = excluded.estado,
                 cep = excluded.cep,
                 atualizado_em = excluded.atualizado_em');
-        if (!$stmt) {
-            throw new RuntimeException('Não foi possível preparar a instrução de gravação de clientes.');
+        if (!$stmt instanceof SQLite3Stmt) {
+            $mensagemErro = trim($db->lastErrorMsg() ?: '');
+            $stmt = null;
+            throw new RuntimeException('Não foi possível preparar a instrução de gravação de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
         }
     }
 
