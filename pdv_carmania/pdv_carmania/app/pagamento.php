@@ -362,9 +362,14 @@ if ($usuarioLogado) {
             <button class="forma-card" type="button" onclick="selecionarForma('Dinheiro', 2009802)">💵 Dinheiro</button>
           </div>
         </div>
-        <button class="btn btn-success w-100 btn-lg" id="btnConcluir" disabled onclick="concluirVenda()">
-          ✅ Concluir Venda
-        </button>
+        <div class="d-grid gap-2">
+          <button class="btn btn-outline-primary w-100 btn-lg" id="btnPreview" onclick="previewRecibo()">
+            👁️ Pré-visualizar Recibo
+          </button>
+          <button class="btn btn-success w-100 btn-lg" id="btnConcluir" disabled onclick="concluirVenda()">
+            ✅ Concluir Venda
+          </button>
+        </div>
       </section>
     </div>
   </main>
@@ -404,8 +409,11 @@ if ($usuarioLogado) {
     const telaPagamentoEl = document.getElementById("telaPagamento");
     const reciboContainerEl = document.getElementById("reciboContainer");
     const btnConcluirEl = document.getElementById("btnConcluir");
+    const btnPreviewEl = document.getElementById("btnPreview");
 
     const vendedorId = window.VENDEDOR_ID || null;
+    const usuarioLogado = window.USUARIO_LOGADO || null;
+    const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
     const dadosVenda = JSON.parse(localStorage.getItem("dadosVenda") || "null");
     let carrinho = [], clienteSelecionado = null, descontoValor = 0, descontoPercentual = 0, totalVenda = 0;
 
@@ -426,6 +434,55 @@ if ($usuarioLogado) {
     document.getElementById("valorTotal").textContent = fmt(totalVenda);
 
     let pagamentos = [], formaSelecionada = null, totalTrocoAtual = 0;
+
+    function obterDepositoSelecionado({ limpar = false } = {}) {
+      const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
+
+      const lerChave = (chave) => {
+        const bruto = localStorage.getItem(chave);
+        if (!bruto) return null;
+        try {
+          const parsed = JSON.parse(bruto);
+          if (parsed && parsed.id) {
+            if (limpar && chave === LEGACY_DEPOSITO_KEY && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
+              localStorage.removeItem(LEGACY_DEPOSITO_KEY);
+            }
+            return parsed;
+          }
+        } catch (err) {
+          console.warn(`Cache de depósito inválido na chave ${chave}, ignorando.`, err);
+        }
+        if (limpar) {
+          localStorage.removeItem(chave);
+        }
+        return null;
+      };
+
+      let depositoSelecionado = lerChave(depositoStorageKey);
+      if (!depositoSelecionado && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
+        depositoSelecionado = lerChave(LEGACY_DEPOSITO_KEY);
+      }
+      return depositoSelecionado;
+    }
+
+    function construirPayloadVenda({ preview = false } = {}) {
+      const payload = {
+        clienteId: clienteSelecionado?.id || null,
+        clienteNome: clienteSelecionado?.nome || "",
+        descontoValor,
+        descontoPercentual,
+        carrinho,
+        pagamentos,
+        trocoTotal: totalTrocoAtual,
+        vendedorId: vendedorId || null,
+        usuarioLogado: usuarioLogado || null,
+        deposito: obterDepositoSelecionado({ limpar: !preview }) || null
+      };
+      if (preview) {
+        payload.preview = true;
+      }
+      return payload;
+    }
 
     function isDinheiro(forma){
       if(!forma) return false;
@@ -581,6 +638,48 @@ if ($usuarioLogado) {
       telaPagamentoEl.style.display = "";
     }
 
+    async function previewRecibo(){
+      if (!clienteSelecionado?.id) return alert("Cliente não selecionado.");
+      if (!carrinho.length) return alert("Carrinho vazio.");
+
+      if (btnPreviewEl) btnPreviewEl.disabled = true;
+      mostrarProcessandoRecibo();
+
+      try {
+        const payload = construirPayloadVenda({ preview: true });
+        const res = await fetch('../api/salvar-venda.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data?.erro || 'Falha ao gerar pré-visualização.');
+
+        reciboContainerEl.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
+        await gerarImagemRecibo();
+        reciboContainerEl.insertAdjacentHTML("beforeend", `
+          <div class="recibo-acoes">
+            <button class="btn btn-primary" onclick="imprimirRecibo()">🖨 Imprimir</button>
+            <button class="btn btn-secondary" onclick="copiarRecibo()">📋 Copiar</button>
+            <button class="btn btn-success" onclick="compartilharRecibo()">📤 Compartilhar</button>
+            <button class="btn btn-outline-dark" onclick="fecharPreviewRecibo()">⬅ Voltar</button>
+          </div>
+          <div class="alert alert-info mt-3 text-center fw-semibold text-uppercase">Pré-visualização do recibo - venda não registrada</div>`);
+      } catch (err) {
+        console.error(err);
+        alert('Erro: ' + (err?.message || 'Erro inesperado.'));
+        restaurarTelaPagamento();
+        atualizarLista();
+      } finally {
+        if (btnPreviewEl) btnPreviewEl.disabled = false;
+      }
+    }
+
+    function fecharPreviewRecibo(){
+      restaurarTelaPagamento();
+      atualizarLista();
+    }
+
     async function concluirVenda(){
       if (!clienteSelecionado?.id) return alert("Cliente não selecionado.");
       if (!carrinho.length) return alert("Carrinho vazio.");
@@ -588,42 +687,7 @@ if ($usuarioLogado) {
       btnConcluirEl.disabled = true;
       mostrarProcessandoRecibo();
 
-        // 🔹 Recupera também o depósito selecionado salvo no localStorage
-        const usuarioLogado = window.USUARIO_LOGADO || null;
-        const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
-        const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
-
-        function recuperarDeposito(chave) {
-          const bruto = localStorage.getItem(chave);
-          if (!bruto) return null;
-          try {
-            const parsed = JSON.parse(bruto);
-            if (parsed && parsed.id) return parsed;
-          } catch (err) {
-            console.warn("Cache de depósito inválido ao concluir venda, ignorando.", err);
-          }
-          localStorage.removeItem(chave);
-          return null;
-        }
-
-        let depositoSelecionado = recuperarDeposito(depositoStorageKey);
-        if (!depositoSelecionado && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
-          depositoSelecionado = recuperarDeposito(LEGACY_DEPOSITO_KEY);
-          localStorage.removeItem(LEGACY_DEPOSITO_KEY);
-        }
-
-        const payload = {
-          clienteId: clienteSelecionado.id,
-          clienteNome: clienteSelecionado.nome || "",
-          descontoValor,
-          descontoPercentual,
-          carrinho,
-          pagamentos,
-          trocoTotal: totalTrocoAtual,
-          vendedorId: vendedorId || null,
-          usuarioLogado: usuarioLogado || null,
-          deposito: depositoSelecionado // ⚠️ essencial para lançar estoque
-        };
+        const payload = construirPayloadVenda();
 
 
       try{

@@ -46,6 +46,7 @@ $descontoPercent = (float)($input['descontoPercent'] ?? 0);
 $deposito        = $input['deposito'] ?? null; // 🧱 Depósito selecionado no carrinho
 $vendedorId      = $input['vendedorId'] ?? null;
 $usuarioPayload  = isset($input['usuarioLogado']) ? trim((string)$input['usuarioLogado']) : '';
+$previewOnly     = !empty($input['preview']);
 $usuarioRecibo   = $usuarioPayload !== '' ? $usuarioPayload : $usuarioSessao;
 $usuarioRecibo   = trim($usuarioRecibo);
 if ($usuarioRecibo !== '') {
@@ -80,9 +81,11 @@ if (empty($carrinho) || !$clienteId) {
     exit;
 }
 
-// 🔐 Token
-$access_token = getAccessToken();
-if (!$access_token) die(json_encode(['erro'=>'Access token inválido ou não pôde ser atualizado']));
+// 🔐 Token (não necessário para preview)
+if (!$previewOnly) {
+    $access_token = getAccessToken();
+    if (!$access_token) die(json_encode(['erro'=>'Access token inválido ou não pôde ser atualizado']));
+}
 
 // 🚀 Função de requisições ao Bling com renovação automática
 function bling_request($method, $path, $body = null) {
@@ -141,8 +144,13 @@ function pagamentoEhDinheiro(array $pagamento): bool
 
 // 💰 Cálculo dos totais
 $totalBruto = 0;
+$totalItensLista = 0;
+$totalQuantidadeLista = 0;
 foreach ($carrinho as $it) {
-    $totalBruto += (float)$it['preco'] * (int)$it['quantidade'];
+    $quantidadeItem = (int) $it['quantidade'];
+    $totalBruto += (float) $it['preco'] * $quantidadeItem;
+    $totalItensLista++;
+    $totalQuantidadeLista += $quantidadeItem;
 }
 $totalBruto = round($totalBruto, 2);
 
@@ -228,65 +236,33 @@ if (!empty($pagamentos)) {
         $valor = round((float)($p['valor'] ?? 0), 2);
         $valorInformado = round((float)($p['valorInformado'] ?? $valor), 2);
         $trocoPagamento = round((float)($p['troco'] ?? 0), 2);
-        if ($id > 0 && $valor > 0) {
+
+        $nomesFormas[] = [
+            'nome' => $nome,
+            'valor' => $valorInformado,
+            'valorAplicado' => $valor,
+            'troco' => $trocoPagamento
+        ];
+
+        if (!$previewOnly && $id > 0 && $valor > 0) {
             $parcelas[] = [
                 'dataVencimento' => date('Y-m-d'),
                 'valor'          => $valor,
                 'formaPagamento' => ['id' => $id],
                 'observacoes'    => 'Pagamento via PDV Carmania'
             ];
-            $nomesFormas[] = [
-                'nome' => $nome,
-                'valor' => $valorInformado,
-                'valorAplicado' => $valor,
-                'troco' => $trocoPagamento
-            ];
         }
     }
-} else {
+} elseif (!$previewOnly) {
     echo json_encode(['ok'=>false,'erro'=>'Nenhuma forma de pagamento']);
     exit;
 }
 
-// 🧱 Payload principal do pedido
-$pedidoPayload = [
-    'data'        => date('Y-m-d'),
-    'contato'     => ['id' => (int)$clienteId],
-    'itens'       => $itensPayload,
-    'parcelas'    => $parcelas,
-    'observacoes' => 'Venda via PDV Carmania ' . time(),
-    'totalvenda'  => $totalFinal,
-    'situacao'    => ['id' => 9] // ✅ "Atendido"
-];
-
-if ($vendedorId) {
-    $pedidoPayload['vendedor'] = ['id' => $vendedorId];
-}
-
-// Adiciona desconto se houver
-if ($descontoAplicado > 0) {
-    $pedidoPayload['desconto'] = [
-        'valor'   => $descontoAplicado,
-        'unidade' => 'REAL'
-    ];
-}
-
-// 🚀 1️⃣ Envia pedido
-$res = bling_request('POST', 'pedidos/vendas', $pedidoPayload);
-if ($res['http'] < 200 || $res['http'] >= 300) {
-    $body = json_decode($res['body'], true);
-    $erro = $body['error']['fields'][0]['msg'] ?? $res['body'];
-    echo json_encode(['ok'=>false,'erro'=>'Falha ao criar pedido','detalhe'=>$erro]);
+if (!$previewOnly && empty($parcelas)) {
+    echo json_encode(['ok'=>false,'erro'=>'Nenhuma forma de pagamento válida']);
     exit;
 }
 
-$rj = json_decode($res['body'], true);
-$pedidoId = $rj['data']['id'] ?? null;
-logMsg("✅ Pedido criado com ID $pedidoId");
-
-logMsg("🔍 Formas recebidas: " . json_encode($pagamentos));
-
-// 🔎 Verifica se a venda contém forma de pagamento "Crediário"
 $isCrediario = false;
 foreach ($pagamentos as $p) {
     $nomeForma = strtolower(trim($p['forma'] ?? $p['nome'] ?? ''));
@@ -297,182 +273,223 @@ foreach ($pagamentos as $p) {
     }
 }
 
-/* =====================================================
-   🚀 1. LANÇAR ESTOQUE AUTOMATICAMENTE
-   ===================================================== */
-$depositoId = $input['deposito']['id'] ?? $input['depositoId'] ?? null;
-if ($pedidoId && $depositoId) {
-    logMsg("📦 Lançando estoque do pedido $pedidoId para depósito $depositoId...");
-    $resEstoque = bling_request('POST', "pedidos/vendas/{$pedidoId}/lancar-estoque/{$depositoId}");
-    $jsonEstoque = json_decode($resEstoque['body'], true);
+// 🧱 Fluxo completo só ocorre quando não é preview
+$pedidoId = null;
+$rj = null;
 
-    if ($resEstoque['http'] >= 200 && $resEstoque['http'] < 300) {
-        logMsg("✅ Estoque lançado com sucesso no depósito $depositoId");
-    } else {
-        logMsg("❌ Falha ao lançar estoque (HTTP {$resEstoque['http']}) -> " . json_encode($jsonEstoque));
+if (!$previewOnly) {
+    // 🧱 Payload principal do pedido
+    $pedidoPayload = [
+        'data'        => date('Y-m-d'),
+        'contato'     => ['id' => (int)$clienteId],
+        'itens'       => $itensPayload,
+        'parcelas'    => $parcelas,
+        'observacoes' => 'Venda via PDV Carmania ' . time(),
+        'totalvenda'  => $totalFinal,
+        'situacao'    => ['id' => 9] // ✅ "Atendido"
+    ];
+
+    if ($vendedorId) {
+        $pedidoPayload['vendedor'] = ['id' => $vendedorId];
     }
-}
 
-/* =====================================================
-   💰 2. LANÇAR CONTAS A RECEBER E BAIXAR AUTOMÁTICO
-   ===================================================== */
-if ($pedidoId) {
-    logMsg("💰 Lançando contas a receber para o pedido $pedidoId...");
+    // Adiciona desconto se houver
+    if ($descontoAplicado > 0) {
+        $pedidoPayload['desconto'] = [
+            'valor'   => $descontoAplicado,
+            'unidade' => 'REAL'
+        ];
+    }
 
-    // 1️⃣ Lança o contas a receber
-    $resContas = bling_request('POST', "pedidos/vendas/{$pedidoId}/lancar-contas");
-    logMsg("Resp contas: HTTP {$resContas['http']}");
+    // 🚀 1️⃣ Envia pedido
+    $res = bling_request('POST', 'pedidos/vendas', $pedidoPayload);
+    if ($res['http'] < 200 || $res['http'] >= 300) {
+        $body = json_decode($res['body'], true);
+        $erro = $body['error']['fields'][0]['msg'] ?? $res['body'];
+        echo json_encode(['ok'=>false,'erro'=>'Falha ao criar pedido','detalhe'=>$erro]);
+        exit;
+    }
 
-    if ($resContas['http'] >= 200 && $resContas['http'] < 300) {
-        logMsg("✅ Contas a receber lançado com sucesso (pedido $pedidoId)");
+    $rj = json_decode($res['body'], true);
+    $pedidoId = $rj['data']['id'] ?? null;
+    logMsg("✅ Pedido criado com ID $pedidoId");
 
-        // 2️⃣ IDs das formas com baixa automática (Pix, Dinheiro, Crédito, Débito)
-        $formasBaixaAutoIds = [7697682, 2009802, 2941151, 2941150];
-        $baixar = false;
+    logMsg("🔍 Formas recebidas: " . json_encode($pagamentos));
 
-        foreach ($pagamentos as $p) {
-            $idForma = (int)($p['id'] ?? 0);
-            if (in_array($idForma, $formasBaixaAutoIds)) {
-                $baixar = true;
-                break;
-            }
+    /* =====================================================
+       🚀 1. LANÇAR ESTOQUE AUTOMATICAMENTE
+       ===================================================== */
+    $depositoId = $input['deposito']['id'] ?? $input['depositoId'] ?? null;
+    if ($pedidoId && $depositoId) {
+        logMsg("📦 Lançando estoque do pedido $pedidoId para depósito $depositoId...");
+        $resEstoque = bling_request('POST', "pedidos/vendas/{$pedidoId}/lancar-estoque/{$depositoId}");
+        $jsonEstoque = json_decode($resEstoque['body'], true);
+
+        if ($resEstoque['http'] >= 200 && $resEstoque['http'] < 300) {
+            logMsg("✅ Estoque lançado com sucesso no depósito $depositoId");
+        } else {
+            logMsg("❌ Falha ao lançar estoque (HTTP {$resEstoque['http']}) -> " . json_encode($jsonEstoque));
         }
+    }
 
-        // 3️⃣ Baixa automática se aplicável
-        if ($baixar) {
-            logMsg("⚙️ Formas de pagamento com baixa automática detectadas. Aguardando geração das contas...");
-            sleep(2); // Aguarda o Bling criar as contas vinculadas
+    /* =====================================================
+       💰 2. LANÇAR CONTAS A RECEBER E BAIXAR AUTOMÁTICO
+       ===================================================== */
+    if ($pedidoId) {
+        logMsg("💰 Lançando contas a receber para o pedido $pedidoId...");
 
-            $dataInicial = date('Y-m-d', strtotime('-1 day'));
-            $dataFinal   = date('Y-m-d');
-            $resBusca = bling_request('GET', "contas/receber?dataEmissaoInicial={$dataInicial}&dataEmissaoFinal={$dataFinal}");
-            logMsg("Resp contas/receber: HTTP {$resBusca['http']}");
+        // 1️⃣ Lança o contas a receber
+        $resContas = bling_request('POST', "pedidos/vendas/{$pedidoId}/lancar-contas");
+        logMsg("Resp contas: HTTP {$resContas['http']}");
 
-            $jsonBusca = json_decode($resBusca['body'], true);
-            if (isset($jsonBusca['data']) && is_array($jsonBusca['data'])) {
-                $contaEncontrada = null;
-                foreach ($jsonBusca['data'] as $conta) {
-                    $tipoOrigem = strtolower($conta['origem']['tipoOrigem'] ?? $conta['origem']['tipo'] ?? '');
-                    $origemId   = (string)($conta['origem']['id'] ?? '');
-                    if ($tipoOrigem === 'venda' && $origemId === (string)$pedidoId) {
-                        $contaEncontrada = $conta;
-                        break;
-                    }
+        if ($resContas['http'] >= 200 && $resContas['http'] < 300) {
+            logMsg("✅ Contas a receber lançado com sucesso (pedido $pedidoId)");
+
+            // 2️⃣ IDs das formas com baixa automática (Pix, Dinheiro, Crédito, Débito)
+            $formasBaixaAutoIds = [7697682, 2009802, 2941151, 2941150];
+            $baixar = false;
+
+            foreach ($pagamentos as $p) {
+                $idForma = (int)($p['id'] ?? 0);
+                if (in_array($idForma, $formasBaixaAutoIds)) {
+                    $baixar = true;
+                    break;
                 }
+            }
 
-                if ($contaEncontrada) {
-                    $contaId = $contaEncontrada['id'];
-                    $valorBaixa = $contaEncontrada['saldo'] ?? $contaEncontrada['valor'] ?? 0;
-                    logMsg("💾 Conta vinculada ao pedido encontrada: ID {$contaId}, valor R$ {$valorBaixa}");
+            // 3️⃣ Baixa automática se aplicável
+            if ($baixar) {
+                logMsg("⚙️ Formas de pagamento com baixa automática detectadas. Aguardando geração das contas...");
+                sleep(2); // Aguarda o Bling criar as contas vinculadas
 
-                    // 4️⃣ Faz a baixa da conta
-                    $resBaixa = bling_request('POST', "contas/receber/{$contaId}/baixar", [
-                        'data' => date('Y-m-d'),
-                        'valor' => $valorBaixa,
-                        'observacoes' => 'Baixa automática via PDV Carmania'
-                    ]);
+                $dataInicial = date('Y-m-d', strtotime('-1 day'));
+                $dataFinal   = date('Y-m-d');
+                $resBusca = bling_request('GET', "contas/receber?dataEmissaoInicial={$dataInicial}&dataEmissaoFinal={$dataFinal}");
+                logMsg("Resp contas/receber: HTTP {$resBusca['http']}");
 
-                    if ($resBaixa['http'] >= 200 && $resBaixa['http'] < 300) {
-                        logMsg("💸 Conta $contaId baixada com sucesso (R$ {$valorBaixa}).");
+                $jsonBusca = json_decode($resBusca['body'], true);
+                if (isset($jsonBusca['data']) && is_array($jsonBusca['data'])) {
+                    $contaEncontrada = null;
+                    foreach ($jsonBusca['data'] as $conta) {
+                        $tipoOrigem = strtolower($conta['origem']['tipoOrigem'] ?? $conta['origem']['tipo'] ?? '');
+                        $origemId   = (string)($conta['origem']['id'] ?? '');
+                        if ($tipoOrigem === 'venda' && $origemId === (string)$pedidoId) {
+                            $contaEncontrada = $conta;
+                            break;
+                        }
+                    }
+
+                    if ($contaEncontrada) {
+                        $contaId = $contaEncontrada['id'];
+                        $valorBaixa = $contaEncontrada['saldo'] ?? $contaEncontrada['valor'] ?? 0;
+                        logMsg("💾 Conta vinculada ao pedido encontrada: ID {$contaId}, valor R$ {$valorBaixa}");
+
+                        // 4️⃣ Faz a baixa da conta
+                        $resBaixa = bling_request('POST', "contas/receber/{$contaId}/baixar", [
+                            'data' => date('Y-m-d'),
+                            'valor' => $valorBaixa,
+                            'observacoes' => 'Baixa automática via PDV Carmania'
+                        ]);
+
+                        if ($resBaixa['http'] >= 200 && $resBaixa['http'] < 300) {
+                            logMsg("💸 Conta $contaId baixada com sucesso (R$ {$valorBaixa}).");
+                        } else {
+                            logMsg("⚠️ Falha ao baixar conta $contaId (HTTP {$resBaixa['http']}) -> {$resBaixa['body']}");
+                        }
                     } else {
-                        logMsg("⚠️ Falha ao baixar conta $contaId (HTTP {$resBaixa['http']}) -> {$resBaixa['body']}");
+                        logMsg("⚠️ Nenhuma conta vinculada ao pedido $pedidoId encontrada nas contas recentes.");
                     }
                 } else {
-                    logMsg("⚠️ Nenhuma conta vinculada ao pedido $pedidoId encontrada nas contas recentes.");
+                    logMsg("⚠️ Nenhuma conta retornada pelo endpoint /contas/receber. Body -> {$resBusca['body']}");
                 }
             } else {
-                logMsg("⚠️ Nenhuma conta retornada pelo endpoint /contas/receber. Body -> {$resBusca['body']}");
+                logMsg("ℹ️ Nenhuma forma de pagamento com baixa automática detectada.");
             }
         } else {
-            logMsg("ℹ️ Nenhuma forma de pagamento com baixa automática detectada.");
+            logMsg("❌ Falha ao lançar contas (HTTP {$resContas['http']}) -> {$resContas['body']}");
         }
-    } else {
-        logMsg("❌ Falha ao lançar contas (HTTP {$resContas['http']}) -> {$resContas['body']}");
     }
-}
 
-
-
-
-/* =====================================================
-   💵 3. REGISTRAR VENDA EM DINHEIRO NO CAIXA
-   ===================================================== */
-$depositoIdCaixa = $depositoId ?? ($input['depositoId'] ?? null);
-if ($valorTotalDinheiroInformado > 0.01) {
-    if ($depositoIdCaixa) {
-        $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
-        $observacaoVenda = 'Venda em dinheiro';
-        if ($pedidoId) {
-            $observacaoVenda .= ' ' . $pedidoId;
+    /* =====================================================
+       💵 3. REGISTRAR VENDA EM DINHEIRO NO CAIXA
+       ===================================================== */
+    $depositoIdCaixa = $depositoId ?? ($input['depositoId'] ?? null);
+    if ($valorTotalDinheiroInformado > 0.01) {
+        if ($depositoIdCaixa) {
+            $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+            $observacaoVenda = 'Venda em dinheiro';
+            if ($pedidoId) {
+                $observacaoVenda .= ' ' . $pedidoId;
+            }
+            try {
+                registrarMovimentacaoCaixa(
+                    (string)$depositoIdCaixa,
+                    $depositoNome,
+                    'venda',
+                    $valorTotalDinheiroInformado,
+                    $observacaoVenda,
+                    $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
+                );
+                logMsg("🧾 Venda em dinheiro registrada no caixa do depósito {$depositoIdCaixa}: R$ {$valorTotalDinheiroInformado}");
+            } catch (Throwable $e) {
+                logMsg('⚠️ Falha ao registrar venda em dinheiro no caixa: ' . $e->getMessage());
+            }
+        } else {
+            logMsg('⚠️ Venda em dinheiro identificada, porém sem depósito válido para registrar no caixa.');
         }
+    }
+
+    /* =====================================================
+       💸 4. REGISTRAR TROCO NO CAIXA (QUANDO EXISTIR)
+       ===================================================== */
+    if ($trocoTotalCalculado > 0.01) {
+        if ($depositoIdCaixa) {
+            $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+            $observacaoTroco = 'Troco devolvido na venda';
+            if ($pedidoId) {
+                $observacaoTroco .= ' ' . $pedidoId;
+            }
+            try {
+                registrarMovimentacaoCaixa(
+                    (string)$depositoIdCaixa,
+                    $depositoNome,
+                    'troco',
+                    $trocoTotalCalculado,
+                    $observacaoTroco,
+                    $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
+                );
+                logMsg("💸 Troco registrado no caixa do depósito {$depositoIdCaixa}: R$ {$trocoTotalCalculado}");
+            } catch (Throwable $e) {
+                logMsg('⚠️ Falha ao registrar troco no caixa: ' . $e->getMessage());
+            }
+        } else {
+            logMsg('⚠️ Troco identificado, porém sem depósito válido para registrar no caixa.');
+        }
+    }
+
+    // 🗃️ Persiste a venda no banco local
+    if ($pedidoId) {
+        $situacaoRegistrada = (int) ($rj['data']['situacao']['id'] ?? 9);
+        $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+
         try {
-            registrarMovimentacaoCaixa(
-                (string)$depositoIdCaixa,
-                $depositoNome,
-                'venda',
-                $valorTotalDinheiroInformado,
-                $observacaoVenda,
-                $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
-            );
-            logMsg("🧾 Venda em dinheiro registrada no caixa do depósito {$depositoIdCaixa}: R$ {$valorTotalDinheiroInformado}");
+            registrarVendaLocal([
+                'id' => (int) $pedidoId,
+                'data_hora' => date('Y-m-d H:i:s'),
+                'contato_id' => $clienteId ? (int) $clienteId : null,
+                'contato_nome' => $clienteNome,
+                'usuario_login' => $usuarioResponsavel,
+                'usuario_nome' => $usuarioRecibo,
+                'deposito_id' => $depositoIdCaixa ? (int) $depositoIdCaixa : null,
+                'deposito_nome' => $depositoNome,
+                'situacao_id' => $situacaoRegistrada > 0 ? $situacaoRegistrada : 9,
+                'valor_total' => $totalFinal,
+                'valor_desconto' => $descontoAplicado,
+            ], $pagamentos, $carrinho);
+            logMsg('💾 Venda registrada no banco local.');
         } catch (Throwable $e) {
-            logMsg('⚠️ Falha ao registrar venda em dinheiro no caixa: ' . $e->getMessage());
+            logMsg('⚠️ Falha ao registrar venda localmente: ' . $e->getMessage());
         }
-    } else {
-        logMsg('⚠️ Venda em dinheiro identificada, porém sem depósito válido para registrar no caixa.');
-    }
-}
-
-/* =====================================================
-   💸 4. REGISTRAR TROCO NO CAIXA (QUANDO EXISTIR)
-   ===================================================== */
-if ($trocoTotalCalculado > 0.01) {
-    if ($depositoIdCaixa) {
-        $usuarioParaCaixa = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
-        $observacaoTroco = 'Troco devolvido na venda';
-        if ($pedidoId) {
-            $observacaoTroco .= ' ' . $pedidoId;
-        }
-        try {
-            registrarMovimentacaoCaixa(
-                (string)$depositoIdCaixa,
-                $depositoNome,
-                'troco',
-                $trocoTotalCalculado,
-                $observacaoTroco,
-                $usuarioParaCaixa !== '' ? $usuarioParaCaixa : null
-            );
-            logMsg("💸 Troco registrado no caixa do depósito {$depositoIdCaixa}: R$ {$trocoTotalCalculado}");
-        } catch (Throwable $e) {
-            logMsg('⚠️ Falha ao registrar troco no caixa: ' . $e->getMessage());
-        }
-    } else {
-        logMsg('⚠️ Troco identificado, porém sem depósito válido para registrar no caixa.');
-    }
-}
-
-// 🗃️ Persiste a venda no banco local
-if ($pedidoId) {
-    $situacaoRegistrada = (int) ($rj['data']['situacao']['id'] ?? 9);
-    $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
-
-    try {
-        registrarVendaLocal([
-            'id' => (int) $pedidoId,
-            'data_hora' => date('Y-m-d H:i:s'),
-            'contato_id' => $clienteId ? (int) $clienteId : null,
-            'contato_nome' => $clienteNome,
-            'usuario_login' => $usuarioResponsavel,
-            'usuario_nome' => $usuarioRecibo,
-            'deposito_id' => $depositoIdCaixa ? (int) $depositoIdCaixa : null,
-            'deposito_nome' => $depositoNome,
-            'situacao_id' => $situacaoRegistrada > 0 ? $situacaoRegistrada : 9,
-            'valor_total' => $totalFinal,
-            'valor_desconto' => $descontoAplicado,
-        ], $pagamentos, $carrinho);
-        logMsg('💾 Venda registrada no banco local.');
-    } catch (Throwable $e) {
-        logMsg('⚠️ Falha ao registrar venda localmente: ' . $e->getMessage());
     }
 }
 
@@ -484,17 +501,20 @@ if ($usuarioRecibo) {
 }
 foreach ($carrinho as $it) {
     $nome = htmlspecialchars($it['nome'] ?? '', ENT_QUOTES, 'UTF-8');
-    $qtd  = (int)$it['quantidade'];
-    $pre  = number_format((float)$it['preco'],2,',','.');
-    $sub  = number_format($it['preco']*$qtd,2,',','.');
+    $qtd  = (int) $it['quantidade'];
+    $sub  = number_format((float) $it['preco'] * $qtd, 2, ',', '.');
+    $descricao = trim($qtd . 'x ' . $nome);
     $itensHtml .= "
-      <tr>
-        <td colspan='2' style='text-align:center; font-weight:bold;'>$nome</td>
-      </tr>
-      <tr>
-        <td style='text-align:left;'>{$qtd} x R$ {$pre}</td>
-        <td style='text-align:right;'>R$ {$sub}</td>
+      <tr class='recibo-item'>
+        <td class='recibo-item-desc'>$descricao</td>
+        <td class='recibo-item-total'>R$ {$sub}</td>
       </tr>";
+}
+$resumoItensHtml = '';
+if ($totalItensLista > 0) {
+    $rotuloItens = $totalItensLista === 1 ? 'item' : 'itens';
+    $resumoItens = $totalItensLista . ' ' . $rotuloItens . ' (Qtd ' . $totalQuantidadeLista . ')';
+    $resumoItensHtml = "    <p class='recibo-total-itens'>$resumoItens</p>";
 }
 
 $formasHtml = '';
@@ -599,41 +619,57 @@ $reciboHtml = <<<HTML
 <style>
   #recibo-preview-stage {
     width:100vw;
-    height:100vh;
+    min-height:100vh;
+    height:auto;
     margin:0;
-    padding:clamp(8px,4vh,24px) 0;
+    padding:clamp(8px,4vh,24px) clamp(8px,3vw,24px);
     display:flex;
     justify-content:center;
-    align-items:center;
+    align-items:flex-start;
     box-sizing:border-box;
     overflow:auto;
     -webkit-overflow-scrolling:touch;
     background:transparent;
   }
   #recibo-preview {
-    width:min(26vw, 18em);
+    width:min(94vw, 70ch);
     max-width:100%;
     font-family:monospace;
-    font-size:clamp(14px, 2.1vh, 18px);
+    font-size:clamp(12px, 1.9vh, 16px);
     line-height:1.35;
-    text-align:center;
+    text-align:left;
     background:#fff;
     color:#111;
-    padding:12px 0 20px;
+    padding:14px 12px 20px;
     box-sizing:border-box;
     margin:0 auto;
+  }
+  #recibo-preview h4 {
+    text-align:center;
   }
   #recibo-preview table {
     width:100%;
     border-collapse:collapse;
-    font-size:0.9em;
+    font-size:0.88em;
   }
   #recibo-preview td {
-    padding:2px 4px;
+    padding:3px 4px;
+    vertical-align:top;
+  }
+  #recibo-preview .recibo-item-desc {
     text-align:left;
+    word-break:break-word;
+  }
+  #recibo-preview .recibo-item-total {
+    text-align:right;
+    white-space:nowrap;
   }
   #recibo-preview td:last-child {
     text-align:right;
+  }
+  #recibo-preview .recibo-total-itens {
+    margin:0 0 6px;
+    font-weight:bold;
   }
   #recibo-preview .recibo-divider {
     border:0;
@@ -642,12 +678,10 @@ $reciboHtml = <<<HTML
   }
   @media (max-width: 768px) {
     #recibo-preview-stage {
-      align-items:flex-start;
-      padding:clamp(12px,6vh,32px) 0;
+      padding:clamp(12px,6vh,32px) clamp(10px,6vw,28px);
     }
     #recibo-preview {
-      width:min(94vw, 18.5em);
-      font-size:clamp(14px, 4.8vw, 19px);
+      font-size:clamp(13px, 4.2vw, 18px);
     }
   }
 </style>
@@ -661,6 +695,7 @@ $reciboHtml .= $atendenteHtml;
 $reciboHtml .= "    <p style='margin:2px 0;'>Pedido: <b>" . ($pedidoId ?? '-') . "</b></p>";
 $reciboHtml .= "    <p style='margin:2px 0;'>Cliente: <b>" . htmlspecialchars($clienteNome, ENT_QUOTES, 'UTF-8') . "</b></p>";
 $reciboHtml .= "    <hr class='recibo-divider'>";
+$reciboHtml .= $resumoItensHtml;
 $reciboHtml .= "    <table style='margin-bottom:6px;'>$itensHtml</table>";
 $reciboHtml .= "    <hr class='recibo-divider'>";
 $reciboHtml .= "    <table>";
@@ -685,5 +720,6 @@ $reciboHtml .= "</div>";
 echo json_encode([
     'ok'=>true,
     'pedidoId'=>$pedidoId,
-    'reciboHtml'=>$reciboHtml
+    'reciboHtml'=>$reciboHtml,
+    'preview'=>$previewOnly
 ], JSON_UNESCAPED_UNICODE);
