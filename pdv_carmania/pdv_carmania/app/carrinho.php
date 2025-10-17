@@ -589,8 +589,8 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
     async function carregarClientes() {
       const fontes = [
-        `../cache/clientes-cache.json?nocache=${Date.now()}`,
         `../api/clientes.php?nocache=${Date.now()}`,
+        `../cache/clientes-cache.json?nocache=${Date.now()}`,
       ];
 
       for (let i = 0; i < fontes.length; i += 1) {

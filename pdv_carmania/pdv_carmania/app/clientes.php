@@ -217,6 +217,7 @@ if (!isset($_SESSION['usuario'])) {
     const SALDO_CACHE_KEY = 'clientesSaldoCrediario';
     const MAX_CONCORRENCIA_SALDOS = 3;
     const formatadorMoeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    const HABILITAR_SALDOS = false;
 
     const saldosClientes = new Map();
     const elementosSaldo = new Map();
@@ -229,8 +230,12 @@ if (!isset($_SESSION['usuario'])) {
     let saldoNegativoAtivo = false;
     let modoFormulario = 'lista';
 
-    carregarSaldosDoStorage();
-    atualizarEstadoBotaoSaldo();
+    if (HABILITAR_SALDOS) {
+      carregarSaldosDoStorage();
+      atualizarEstadoBotaoSaldo();
+    } else {
+      btnSaldoNegativo.classList.add('d-none');
+    }
 
     function setMensagem(tipo, texto) {
       mensagensEl.innerHTML = `
@@ -542,15 +547,17 @@ if (!isset($_SESSION['usuario'])) {
       conteudo.appendChild(nomeEl);
 
       const chave = obterChaveCliente(cliente.id);
-      const saldoEl = document.createElement('div');
-      saldoEl.className = 'small saldo-crediario text-muted';
-      saldoEl.dataset.clienteSaldo = chave;
-      elementosSaldo.set(chave, saldoEl);
-      if (typeof cliente.saldoCrediario === 'number' && !Number.isNaN(cliente.saldoCrediario)) {
-        saldosClientes.set(chave, cliente.saldoCrediario);
+      if (HABILITAR_SALDOS) {
+        const saldoEl = document.createElement('div');
+        saldoEl.className = 'small saldo-crediario text-muted';
+        saldoEl.dataset.clienteSaldo = chave;
+        elementosSaldo.set(chave, saldoEl);
+        if (typeof cliente.saldoCrediario === 'number' && !Number.isNaN(cliente.saldoCrediario)) {
+          saldosClientes.set(chave, cliente.saldoCrediario);
+        }
+        atualizarSaldoNaInterface(chave);
+        conteudo.appendChild(saldoEl);
       }
-      atualizarSaldoNaInterface(chave);
-      conteudo.appendChild(saldoEl);
 
       const documento = cliente.numeroDocumento || '—';
       const telefone = cliente.celular || cliente.telefone || '';
@@ -573,7 +580,9 @@ if (!isset($_SESSION['usuario'])) {
         setMensagem('info', 'Cliente carregado. Edite os dados e clique em salvar para atualizar.');
       });
 
-      agendarSaldoCliente(cliente.id);
+      if (HABILITAR_SALDOS) {
+        agendarSaldoCliente(cliente.id);
+      }
       return li;
     }
 
@@ -598,7 +607,7 @@ if (!isset($_SESSION['usuario'])) {
       }
 
       let pendentesSaldo = false;
-      if (saldoNegativoAtivo) {
+      if (HABILITAR_SALDOS && saldoNegativoAtivo) {
         const filtrados = [];
         resultados.forEach(cliente => {
           const saldo = obterSaldoRegistrado(cliente.id);
@@ -615,7 +624,7 @@ if (!isset($_SESSION['usuario'])) {
       }
 
       if (!resultados.length) {
-        if (saldoNegativoAtivo) {
+        if (HABILITAR_SALDOS && saldoNegativoAtivo) {
           listaClientesEl.innerHTML = pendentesSaldo
             ? '<p class="text-muted mb-0">Consultando saldos do crediário...</p>'
             : '<p class="text-muted mb-0">Nenhum cliente com saldo em aberto no crediário.</p>';
@@ -632,7 +641,7 @@ if (!isset($_SESSION['usuario'])) {
       });
       listaClientesEl.appendChild(wrapper);
 
-      if (saldoNegativoAtivo) {
+      if (HABILITAR_SALDOS && saldoNegativoAtivo) {
         const aindaCarregando = clientes.some(cliente => obterSaldoRegistrado(cliente.id) === null);
         if (aindaCarregando) {
           const aviso = document.createElement('p');
@@ -669,14 +678,16 @@ if (!isset($_SESSION['usuario'])) {
           .filter(cliente => cliente && typeof cliente === 'object')
           .map(cliente => {
             const chave = obterChaveCliente(cliente.id);
-            const saldo = obterSaldoRegistrado(chave);
+            const saldo = HABILITAR_SALDOS ? obterSaldoRegistrado(chave) : null;
             return {
               ...cliente,
               saldoCrediario: saldo
             };
           });
 
-        clientes.forEach(cliente => agendarSaldoCliente(cliente.id, saldoNegativoAtivo));
+        if (HABILITAR_SALDOS) {
+          clientes.forEach(cliente => agendarSaldoCliente(cliente.id, saldoNegativoAtivo));
+        }
 
         atualizarListaClientes(buscaClienteInput.value);
       } catch (erro) {
@@ -706,12 +717,17 @@ if (!isset($_SESSION['usuario'])) {
     });
 
     btnRecarregar.addEventListener('click', () => {
-      limparCacheSaldos();
+      if (HABILITAR_SALDOS) {
+        limparCacheSaldos();
+      }
       atualizarListaClientes(buscaClienteInput.value);
       carregarClientes(true);
     });
 
     btnSaldoNegativo.addEventListener('click', () => {
+      if (!HABILITAR_SALDOS) {
+        return;
+      }
       saldoNegativoAtivo = !saldoNegativoAtivo;
       atualizarEstadoBotaoSaldo();
       if (saldoNegativoAtivo) {
@@ -772,7 +788,7 @@ if (!isset($_SESSION['usuario'])) {
 
         if (clienteRetornado) {
           chaveAtualizada = obterChaveCliente(clienteRetornado.id);
-          const saldoAtual = obterSaldoRegistrado(chaveAtualizada);
+          const saldoAtual = HABILITAR_SALDOS ? obterSaldoRegistrado(chaveAtualizada) : null;
           if (typeof saldoAtual === 'number') {
             clienteRetornado.saldoCrediario = saldoAtual;
           }
@@ -796,7 +812,7 @@ if (!isset($_SESSION['usuario'])) {
 
         if (clienteRetornado) {
           atualizarListaClientes(buscaClienteInput.value);
-          if (chaveAtualizada !== null) {
+          if (HABILITAR_SALDOS && chaveAtualizada !== null) {
             agendarSaldoCliente(chaveAtualizada, true);
           }
         } else {
