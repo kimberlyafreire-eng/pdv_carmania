@@ -479,20 +479,20 @@ if ($pedidoId) {
 // 🧾 Recibo HTML
 $itensHtml = '';
 $atendenteHtml = '';
+$totalItens = count($carrinho);
+$totalQuantidade = 0;
 if ($usuarioRecibo) {
     $atendenteHtml = "  <p style='margin:2px 0;'>Atendente: <b>" . htmlspecialchars($usuarioRecibo, ENT_QUOTES, 'UTF-8') . "</b></p>";
 }
 foreach ($carrinho as $it) {
     $nome = htmlspecialchars($it['nome'] ?? '', ENT_QUOTES, 'UTF-8');
     $qtd  = (int)$it['quantidade'];
-    $pre  = number_format((float)$it['preco'],2,',','.');
     $sub  = number_format($it['preco']*$qtd,2,',','.');
+    $totalQuantidade += $qtd;
+    $descricao = trim("{$qtd}x {$nome}");
     $itensHtml .= "
       <tr>
-        <td colspan='2' style='text-align:center; font-weight:bold;'>$nome</td>
-      </tr>
-      <tr>
-        <td style='text-align:left;'>{$qtd} x R$ {$pre}</td>
+        <td style='text-align:left;'>$descricao</td>
         <td style='text-align:right;'>R$ {$sub}</td>
       </tr>";
 }
@@ -599,41 +599,48 @@ $reciboHtml = <<<HTML
 <style>
   #recibo-preview-stage {
     width:100vw;
-    height:100vh;
+    min-height:100vh;
     margin:0;
     padding:clamp(8px,4vh,24px) 0;
     display:flex;
     justify-content:center;
-    align-items:center;
+    align-items:flex-start;
     box-sizing:border-box;
     overflow:auto;
     -webkit-overflow-scrolling:touch;
     background:transparent;
   }
   #recibo-preview {
-    width:min(26vw, 18em);
+    width:min(92vw, 60ch);
     max-width:100%;
     font-family:monospace;
-    font-size:clamp(14px, 2.1vh, 18px);
+    font-size:13px;
     line-height:1.35;
-    text-align:center;
+    text-align:left;
     background:#fff;
     color:#111;
-    padding:12px 0 20px;
+    padding:14px 12px 20px;
     box-sizing:border-box;
     margin:0 auto;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.04);
   }
   #recibo-preview table {
     width:100%;
     border-collapse:collapse;
-    font-size:0.9em;
+    font-size:0.92em;
   }
   #recibo-preview td {
-    padding:2px 4px;
+    padding:2px 0;
     text-align:left;
+    vertical-align:top;
   }
   #recibo-preview td:last-child {
     text-align:right;
+  }
+  #recibo-preview td:first-child {
+    padding-right:8px;
+    word-break:break-word;
+    white-space:pre-wrap;
   }
   #recibo-preview .recibo-divider {
     border:0;
@@ -642,18 +649,17 @@ $reciboHtml = <<<HTML
   }
   @media (max-width: 768px) {
     #recibo-preview-stage {
-      align-items:flex-start;
       padding:clamp(12px,6vh,32px) 0;
     }
     #recibo-preview {
-      width:min(94vw, 18.5em);
-      font-size:clamp(14px, 4.8vw, 19px);
+      width:min(94vw, 58ch);
+      font-size:13px;
     }
   }
 </style>
 <div id='recibo-preview-stage'>
   <div id='recibo-preview'>
-    <h4 style='margin:6px 0;color:#dc3545;'>Carmania Produtos Automotivos</h4>
+    <h4 style='margin:6px 0;color:#dc3545;text-align:center;'>Carmania Produtos Automotivos</h4>
 HTML;
 
 $reciboHtml .= $atendenteHtml;
@@ -661,6 +667,10 @@ $reciboHtml .= $atendenteHtml;
 $reciboHtml .= "    <p style='margin:2px 0;'>Pedido: <b>" . ($pedidoId ?? '-') . "</b></p>";
 $reciboHtml .= "    <p style='margin:2px 0;'>Cliente: <b>" . htmlspecialchars($clienteNome, ENT_QUOTES, 'UTF-8') . "</b></p>";
 $reciboHtml .= "    <hr class='recibo-divider'>";
+if ($totalItens > 0) {
+    $labelItens = $totalItens === 1 ? 'item' : 'itens';
+    $reciboHtml .= "    <p style='margin:4px 0;font-weight:bold;'>" . number_format($totalItens, 0, '', '.') . " " . $labelItens . " (Qtd " . number_format($totalQuantidade, 0, '', '.') . ")</p>";
+}
 $reciboHtml .= "    <table style='margin-bottom:6px;'>$itensHtml</table>";
 $reciboHtml .= "    <hr class='recibo-divider'>";
 $reciboHtml .= "    <table>";
