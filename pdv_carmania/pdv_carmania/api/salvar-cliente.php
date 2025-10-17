@@ -21,20 +21,21 @@ if (!is_array($dadosEntrada)) {
 }
 
 $nome = trim($dadosEntrada['nome'] ?? '');
+$erros = [];
 $tipoPessoaEntrada = strtoupper(substr(trim($dadosEntrada['tipoPessoa'] ?? ''), 0, 1));
-$tipoPessoa = in_array($tipoPessoaEntrada, ['F', 'J'], true) ? $tipoPessoaEntrada : '';
+$tipoPessoa = 'F';
+if ($tipoPessoaEntrada !== '') {
+    if (in_array($tipoPessoaEntrada, ['F', 'J'], true)) {
+        $tipoPessoa = $tipoPessoaEntrada;
+    } else {
+        $erros[] = 'Tipo de pessoa inválido. Escolha Física ou Jurídica.';
+    }
+}
 $documento = preg_replace('/\D+/', '', $dadosEntrada['documento'] ?? '');
 $celular = trim($dadosEntrada['celular'] ?? '');
 
-$erros = [];
 if ($nome === '') {
     $erros[] = 'Nome completo é obrigatório.';
-}
-if ($tipoPessoaEntrada !== '' && $tipoPessoa === '') {
-    $erros[] = 'Tipo de pessoa inválido. Escolha Física ou Jurídica.';
-}
-if ($documento !== '' && $tipoPessoa === '') {
-    $erros[] = 'Informe o tipo de pessoa ao preencher CPF/CNPJ.';
 }
 if ($celular === '') {
     $erros[] = 'Celular é obrigatório.';
@@ -62,14 +63,11 @@ $payload = [
     'nome' => $nome,
     'situacao' => 'A',
     'celular' => $celular,
+    'tipo' => $tipoPessoa,
     'tiposContato' => [
         ['id' => $tipoClienteId],
     ],
 ];
-
-if ($tipoPessoa !== '') {
-    $payload['tipo'] = $tipoPessoa;
-}
 
 if ($documento !== '') {
     $payload['numeroDocumento'] = $documento;

@@ -39,6 +39,15 @@ if (!isset($_SESSION['usuario'])) {
       color: #dc3545;
       margin-left: 4px;
     }
+    .saldo-crediario {
+      font-size: 0.9rem;
+    }
+    .saldo-crediario.text-danger {
+      font-weight: 600;
+    }
+    .saldo-crediario.text-muted {
+      font-style: italic;
+    }
     @media (max-width: 576px) {
       h2 {
         font-size: 1.5rem;
@@ -91,7 +100,7 @@ if (!isset($_SESSION['usuario'])) {
 
     <div id="mensagens"></div>
 
-    <div class="card shadow-sm mb-4">
+    <div id="listaWrapper" class="card shadow-sm mb-4">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-column flex-sm-row gap-2">
           <label for="buscaCliente" class="form-label mb-0 fw-semibold">Buscar cliente</label>
@@ -101,15 +110,19 @@ if (!isset($_SESSION['usuario'])) {
           <span class="input-group-text">🔍</span>
           <input type="text" id="buscaCliente" class="form-control" placeholder="Pesquisar clientes" autocomplete="off" />
           <button id="btnRecarregar" class="btn btn-outline-secondary" type="button">Atualizar</button>
+          <button id="btnSaldoNegativo" class="btn btn-outline-danger" type="button" aria-pressed="false">Saldo Negativo</button>
         </div>
         <div id="listaClientes" class="mt-3"></div>
       </div>
     </div>
 
-    <div class="card shadow-sm">
-      <div class="card-header bg-white">
-        <h5 class="mb-0">Dados do Cliente</h5>
-        <small class="text-muted">Campos com * são obrigatórios.</small>
+    <div id="formWrapper" class="card shadow-sm d-none">
+      <div class="card-header bg-white d-flex justify-content-between align-items-start flex-column flex-md-row gap-2">
+        <div>
+          <h5 class="mb-0" id="tituloFormulario">Dados do Cliente</h5>
+          <small class="text-muted">Campos com * são obrigatórios.</small>
+        </div>
+        <button type="button" class="btn btn-link text-decoration-none px-0" id="btnVoltarLista">&larr; Voltar para a lista</button>
       </div>
       <div class="card-body">
         <form id="formCliente" class="row g-3">
@@ -123,8 +136,7 @@ if (!isset($_SESSION['usuario'])) {
           <div class="col-12 col-md-6">
             <label for="tipoPessoa" class="form-label">Pessoa</label>
             <select class="form-select" id="tipoPessoa" name="tipoPessoa">
-              <option value="">Selecione...</option>
-              <option value="F">Física</option>
+              <option value="F" selected>Física</option>
               <option value="J">Jurídica</option>
             </select>
           </div>
@@ -184,12 +196,41 @@ if (!isset($_SESSION['usuario'])) {
     const formCliente = document.getElementById('formCliente');
     const btnNovoCliente = document.getElementById('btnNovoCliente');
     const btnRecarregar = document.getElementById('btnRecarregar');
+    const btnSaldoNegativo = document.getElementById('btnSaldoNegativo');
+    const btnVoltarLista = document.getElementById('btnVoltarLista');
+    const listaWrapper = document.getElementById('listaWrapper');
+    const formWrapper = document.getElementById('formWrapper');
+    const tituloFormulario = document.getElementById('tituloFormulario');
     const buscaClienteInput = document.getElementById('buscaCliente');
     const tipoPessoaSelect = document.getElementById('tipoPessoa');
     const documentoInput = document.getElementById('documento');
+    const nomeInput = document.getElementById('nome');
+    const clienteIdInput = document.getElementById('clienteId');
+    const celularInput = document.getElementById('celular');
+    const telefoneInput = document.getElementById('telefone');
+    const enderecoInput = document.getElementById('endereco');
+    const bairroInput = document.getElementById('bairro');
+    const cidadeInput = document.getElementById('cidade');
+    const estadoInput = document.getElementById('estado');
+    const cepInput = document.getElementById('cep');
+
+    const SALDO_CACHE_KEY = 'clientesSaldoCrediario';
+    const MAX_CONCORRENCIA_SALDOS = 3;
+    const formatadorMoeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const saldosClientes = new Map();
+    const elementosSaldo = new Map();
+    const filaSaldos = [];
+    const saldosEmProcesso = new Set();
+    const saldosPendentes = new Set();
 
     let clientes = [];
     let clienteSelecionado = null;
+    let saldoNegativoAtivo = false;
+    let modoFormulario = 'lista';
+
+    carregarSaldosDoStorage();
+    atualizarEstadoBotaoSaldo();
 
     function setMensagem(tipo, texto) {
       mensagensEl.innerHTML = `
@@ -207,67 +248,345 @@ if (!isset($_SESSION['usuario'])) {
       return valor.replace(/\D+/g, '');
     }
 
+    function obterChaveCliente(clienteId) {
+      if (clienteId === undefined || clienteId === null) {
+        return '';
+      }
+      return String(clienteId);
+    }
+
+    function carregarSaldosDoStorage() {
+      if (typeof sessionStorage === 'undefined') {
+        return;
+      }
+      try {
+        const bruto = sessionStorage.getItem(SALDO_CACHE_KEY);
+        if (!bruto) {
+          return;
+        }
+        const armazenados = JSON.parse(bruto);
+        if (armazenados && typeof armazenados === 'object') {
+          Object.entries(armazenados).forEach(([id, valor]) => {
+            const numero = Number(valor);
+            if (Number.isFinite(numero)) {
+              saldosClientes.set(String(id), numero);
+            }
+          });
+        }
+      } catch (erro) {
+        console.warn('Não foi possível carregar cache de saldos', erro);
+        try {
+          sessionStorage.removeItem(SALDO_CACHE_KEY);
+        } catch (_) {
+          /* ignorado */
+        }
+      }
+    }
+
+    function persistirSaldosNoStorage() {
+      if (typeof sessionStorage === 'undefined') {
+        return;
+      }
+      try {
+        if (!saldosClientes.size) {
+          sessionStorage.removeItem(SALDO_CACHE_KEY);
+          return;
+        }
+        const dados = {};
+        saldosClientes.forEach((valor, id) => {
+          dados[id] = valor;
+        });
+        sessionStorage.setItem(SALDO_CACHE_KEY, JSON.stringify(dados));
+      } catch (erro) {
+        console.warn('Não foi possível salvar cache de saldos', erro);
+      }
+    }
+
+    function obterSaldoRegistrado(clienteId) {
+      const chave = obterChaveCliente(clienteId);
+      if (!chave) {
+        return null;
+      }
+      const valor = saldosClientes.get(chave);
+      return typeof valor === 'number' && !Number.isNaN(valor) ? valor : null;
+    }
+
+    function getSaldoDisplayInfo(valor) {
+      if (typeof valor === 'number') {
+        if (valor > 0.009) {
+          return {
+            texto: `Saldo crediário em aberto: ${formatadorMoeda.format(valor)}`,
+            classe: 'text-danger'
+          };
+        }
+        if (valor < -0.009) {
+          return {
+            texto: `Saldo crediário: ${formatadorMoeda.format(valor)}`,
+            classe: 'text-success'
+          };
+        }
+        return {
+          texto: `Saldo crediário: ${formatadorMoeda.format(0)}`,
+          classe: 'text-success'
+        };
+      }
+      return {
+        texto: 'Saldo crediário: consultando...',
+        classe: 'text-muted'
+      };
+    }
+
+    function atualizarSaldoNaInterface(clienteId) {
+      const chave = obterChaveCliente(clienteId);
+      if (!chave) {
+        return;
+      }
+      const elemento = elementosSaldo.get(chave);
+      if (!elemento) {
+        return;
+      }
+      const saldo = obterSaldoRegistrado(chave);
+      const info = getSaldoDisplayInfo(saldo);
+      elemento.textContent = info.texto;
+      elemento.className = `small saldo-crediario ${info.classe}`;
+    }
+
+    function registrarSaldoCliente(clienteId, valor) {
+      const chave = obterChaveCliente(clienteId);
+      if (!chave) {
+        return;
+      }
+      const numero = Number(valor);
+      const saldoNormalizado = Number.isFinite(numero) ? numero : 0;
+      saldosClientes.set(chave, saldoNormalizado);
+      persistirSaldosNoStorage();
+
+      const clienteLocal = clientes.find(c => obterChaveCliente(c.id) === chave);
+      if (clienteLocal) {
+        clienteLocal.saldoCrediario = saldoNormalizado;
+      }
+      if (clienteSelecionado && obterChaveCliente(clienteSelecionado.id) === chave) {
+        clienteSelecionado.saldoCrediario = saldoNormalizado;
+      }
+
+      if (saldoNegativoAtivo) {
+        atualizarListaClientes(buscaClienteInput.value);
+      } else {
+        atualizarSaldoNaInterface(chave);
+      }
+    }
+
+    async function consultarSaldoCliente(clienteId) {
+      const resposta = await fetch('../api/crediario/saldo.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clienteId })
+      });
+      const json = await resposta.json().catch(() => null);
+      if (!resposta.ok || !json || json.ok !== true) {
+        throw new Error(json?.erro || 'Erro ao consultar saldo do crediário.');
+      }
+      const valor = Number(json.saldoAtual);
+      return Number.isFinite(valor) ? valor : 0;
+    }
+
+    function processarFilaSaldos() {
+      while (saldosEmProcesso.size < MAX_CONCORRENCIA_SALDOS && filaSaldos.length) {
+        const chave = filaSaldos.shift();
+        if (!chave) {
+          continue;
+        }
+        saldosPendentes.delete(chave);
+        if (saldosEmProcesso.has(chave)) {
+          continue;
+        }
+        if (!saldosClientes.has(chave)) {
+          atualizarSaldoNaInterface(chave);
+        }
+        saldosEmProcesso.add(chave);
+        consultarSaldoCliente(chave)
+          .then(valor => registrarSaldoCliente(chave, valor))
+          .catch(erro => {
+            console.error('Erro ao consultar saldo do cliente', chave, erro);
+            registrarSaldoCliente(chave, 0);
+          })
+          .finally(() => {
+            saldosEmProcesso.delete(chave);
+            processarFilaSaldos();
+          });
+      }
+    }
+
+    function agendarSaldoCliente(clienteId, forcar = false) {
+      const chave = obterChaveCliente(clienteId);
+      if (!chave) {
+        return;
+      }
+      if (forcar) {
+        if (saldosClientes.has(chave)) {
+          saldosClientes.delete(chave);
+          persistirSaldosNoStorage();
+          const clienteLocal = clientes.find(c => obterChaveCliente(c.id) === chave);
+          if (clienteLocal) {
+            clienteLocal.saldoCrediario = null;
+          }
+          if (clienteSelecionado && obterChaveCliente(clienteSelecionado.id) === chave) {
+            clienteSelecionado.saldoCrediario = null;
+          }
+        }
+      } else if (saldosClientes.has(chave)) {
+        return;
+      }
+      if (saldosEmProcesso.has(chave) || saldosPendentes.has(chave)) {
+        return;
+      }
+      saldosPendentes.add(chave);
+      filaSaldos.push(chave);
+      atualizarSaldoNaInterface(chave);
+      processarFilaSaldos();
+    }
+
+    function limparCacheSaldos() {
+      saldosClientes.clear();
+      persistirSaldosNoStorage();
+      filaSaldos.length = 0;
+      saldosPendentes.clear();
+      clientes.forEach(cliente => {
+        cliente.saldoCrediario = null;
+      });
+    }
+
+    function atualizarEstadoBotaoSaldo() {
+      if (saldoNegativoAtivo) {
+        btnSaldoNegativo.classList.remove('btn-outline-danger');
+        btnSaldoNegativo.classList.add('btn-danger', 'active');
+        btnSaldoNegativo.setAttribute('aria-pressed', 'true');
+      } else {
+        btnSaldoNegativo.classList.add('btn-outline-danger');
+        btnSaldoNegativo.classList.remove('btn-danger', 'active');
+        btnSaldoNegativo.setAttribute('aria-pressed', 'false');
+      }
+    }
+
     function preencherFormulario(cliente) {
+      if (!cliente || typeof cliente !== 'object') {
+        return;
+      }
       clienteSelecionado = cliente;
-      document.getElementById('clienteId').value = cliente?.id || '';
-      document.getElementById('nome').value = cliente?.nome || '';
+      clienteIdInput.value = cliente?.id || '';
+      nomeInput.value = cliente?.nome || '';
       let tipo = cliente?.tipo || '';
       if (!tipo && cliente?.numeroDocumento) {
         const tamanhoDoc = cliente.numeroDocumento.replace(/\D+/g, '').length;
         tipo = tamanhoDoc > 11 ? 'J' : 'F';
       }
-      tipoPessoaSelect.value = tipo || '';
+      tipoPessoaSelect.value = tipo || 'F';
+      tipoPessoaSelect.setCustomValidity('');
       documentoInput.value = cliente?.numeroDocumento || '';
-      document.getElementById('celular').value = cliente?.celular || '';
-      document.getElementById('telefone').value = cliente?.telefone || '';
+      celularInput.value = cliente?.celular || '';
+      telefoneInput.value = cliente?.telefone || '';
 
       const endereco = cliente?.endereco?.geral || {};
-      document.getElementById('endereco').value = endereco.endereco || '';
-      document.getElementById('bairro').value = endereco.bairro || '';
-      document.getElementById('cidade').value = endereco.municipio || '';
-      document.getElementById('estado').value = endereco.uf || '';
-      document.getElementById('cep').value = endereco.cep || '';
+      enderecoInput.value = endereco.endereco || '';
+      bairroInput.value = endereco.bairro || '';
+      cidadeInput.value = endereco.municipio || '';
+      estadoInput.value = endereco.uf || '';
+      cepInput.value = endereco.cep || '';
+
+      mostrarFormulario('editar');
     }
 
     function limparFormulario() {
       clienteSelecionado = null;
       formCliente.reset();
-      document.getElementById('clienteId').value = '';
-      tipoPessoaSelect.value = '';
+      clienteIdInput.value = '';
+      tipoPessoaSelect.value = 'F';
       tipoPessoaSelect.setCustomValidity('');
+      documentoInput.value = '';
       formCliente.classList.remove('was-validated');
-      limparMensagem();
+    }
+
+    function mostrarFormulario(modo) {
+      modoFormulario = modo;
+      listaWrapper.classList.add('d-none');
+      formWrapper.classList.remove('d-none');
+      btnNovoCliente.classList.add('d-none');
+      tituloFormulario.textContent = modo === 'editar' ? 'Editar Cliente' : 'Novo Cliente';
+      formCliente.classList.remove('was-validated');
+      setTimeout(() => {
+        nomeInput.focus();
+      }, 50);
+    }
+
+    function mostrarLista() {
+      modoFormulario = 'lista';
+      formWrapper.classList.add('d-none');
+      listaWrapper.classList.remove('d-none');
+      btnNovoCliente.classList.remove('d-none');
+      formCliente.classList.remove('was-validated');
+      setTimeout(() => {
+        buscaClienteInput.focus();
+      }, 50);
     }
 
     function criarItemLista(cliente) {
       const li = document.createElement('button');
       li.type = 'button';
-      li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
-      const nome = cliente.nome || 'Sem nome';
+      li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-3 text-start';
+      const conteudo = document.createElement('div');
+      conteudo.className = 'flex-grow-1';
+
+      const nomeEl = document.createElement('div');
+      nomeEl.className = 'fw-semibold';
+      nomeEl.textContent = cliente.nome || 'Sem nome';
+      conteudo.appendChild(nomeEl);
+
+      const chave = obterChaveCliente(cliente.id);
+      const saldoEl = document.createElement('div');
+      saldoEl.className = 'small saldo-crediario text-muted';
+      saldoEl.dataset.clienteSaldo = chave;
+      elementosSaldo.set(chave, saldoEl);
+      if (typeof cliente.saldoCrediario === 'number' && !Number.isNaN(cliente.saldoCrediario)) {
+        saldosClientes.set(chave, cliente.saldoCrediario);
+      }
+      atualizarSaldoNaInterface(chave);
+      conteudo.appendChild(saldoEl);
+
       const documento = cliente.numeroDocumento || '—';
       const telefone = cliente.celular || cliente.telefone || '';
-      li.innerHTML = `
-        <div>
-          <div class="fw-semibold">${nome}</div>
-          <small class="text-muted">${documento}${telefone ? ' • ' + telefone : ''}</small>
-        </div>
-        <span class="badge badge-id">#${cliente.id || '—'}</span>`;
+      if (documento || telefone) {
+        const info = document.createElement('small');
+        info.className = 'text-muted d-block mt-1';
+        info.textContent = telefone ? `${documento}${documento !== '—' ? ' • ' : ''}${telefone}` : documento;
+        conteudo.appendChild(info);
+      }
+
+      li.appendChild(conteudo);
+
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-id';
+      badge.textContent = `#${cliente.id || '—'}`;
+      li.appendChild(badge);
+
       li.addEventListener('click', () => {
         preencherFormulario(cliente);
         setMensagem('info', 'Cliente carregado. Edite os dados e clique em salvar para atualizar.');
       });
+
+      agendarSaldoCliente(cliente.id);
       return li;
     }
 
     function atualizarListaClientes(filtro = '') {
       listaClientesEl.innerHTML = '';
+      elementosSaldo.clear();
+
       if (!clientes.length) {
         listaClientesEl.innerHTML = '<p class="text-muted mb-0">Nenhum cliente encontrado. Utilize o botão atualizar para sincronizar.</p>';
         return;
       }
 
       const termo = filtro.trim().toLowerCase();
-      const fragment = document.createDocumentFragment();
       let resultados = clientes;
       if (termo) {
         resultados = clientes.filter(cliente => {
@@ -278,17 +597,50 @@ if (!isset($_SESSION['usuario'])) {
         });
       }
 
+      let pendentesSaldo = false;
+      if (saldoNegativoAtivo) {
+        const filtrados = [];
+        resultados.forEach(cliente => {
+          const saldo = obterSaldoRegistrado(cliente.id);
+          if (saldo === null) {
+            pendentesSaldo = true;
+            agendarSaldoCliente(cliente.id);
+            return;
+          }
+          if (saldo > 0.009) {
+            filtrados.push(cliente);
+          }
+        });
+        resultados = filtrados;
+      }
+
       if (!resultados.length) {
-        listaClientesEl.innerHTML = '<p class="text-muted mb-0">Nenhum resultado para a busca realizada.</p>';
+        if (saldoNegativoAtivo) {
+          listaClientesEl.innerHTML = pendentesSaldo
+            ? '<p class="text-muted mb-0">Consultando saldos do crediário...</p>'
+            : '<p class="text-muted mb-0">Nenhum cliente com saldo em aberto no crediário.</p>';
+        } else {
+          listaClientesEl.innerHTML = '<p class="text-muted mb-0">Nenhum resultado para a busca realizada.</p>';
+        }
         return;
       }
 
       const wrapper = document.createElement('div');
       wrapper.className = 'list-group';
-      resultados.slice(0, 30).forEach(cliente => {
+      resultados.forEach(cliente => {
         wrapper.appendChild(criarItemLista(cliente));
       });
       listaClientesEl.appendChild(wrapper);
+
+      if (saldoNegativoAtivo) {
+        const aindaCarregando = clientes.some(cliente => obterSaldoRegistrado(cliente.id) === null);
+        if (aindaCarregando) {
+          const aviso = document.createElement('p');
+          aviso.className = 'text-muted small mt-2 mb-0';
+          aviso.textContent = 'Consultando saldos restantes...';
+          listaClientesEl.appendChild(aviso);
+        }
+      }
     }
 
     async function carregarTiposContato() {
@@ -312,7 +664,20 @@ if (!isset($_SESSION['usuario'])) {
           throw new Error('Erro ao consultar clientes.');
         }
         const json = await resposta.json();
-        clientes = Array.isArray(json.data) ? json.data : [];
+        const dados = Array.isArray(json.data) ? json.data : [];
+        clientes = dados
+          .filter(cliente => cliente && typeof cliente === 'object')
+          .map(cliente => {
+            const chave = obterChaveCliente(cliente.id);
+            const saldo = obterSaldoRegistrado(chave);
+            return {
+              ...cliente,
+              saldoCrediario: saldo
+            };
+          });
+
+        clientes.forEach(cliente => agendarSaldoCliente(cliente.id, saldoNegativoAtivo));
+
         atualizarListaClientes(buscaClienteInput.value);
       } catch (erro) {
         listaClientesEl.innerHTML = '<div class="alert alert-danger" role="alert">Não foi possível carregar os clientes. Tente novamente.</div>';
@@ -341,60 +706,99 @@ if (!isset($_SESSION['usuario'])) {
     });
 
     btnRecarregar.addEventListener('click', () => {
+      limparCacheSaldos();
+      atualizarListaClientes(buscaClienteInput.value);
       carregarClientes(true);
+    });
+
+    btnSaldoNegativo.addEventListener('click', () => {
+      saldoNegativoAtivo = !saldoNegativoAtivo;
+      atualizarEstadoBotaoSaldo();
+      if (saldoNegativoAtivo) {
+        setMensagem('info', 'Mostrando apenas clientes com saldo em aberto no crediário.');
+      }
+      clientes.forEach(cliente => agendarSaldoCliente(cliente.id, saldoNegativoAtivo));
+      atualizarListaClientes(buscaClienteInput.value);
     });
 
     btnNovoCliente.addEventListener('click', () => {
       limparFormulario();
+      mostrarFormulario('novo');
       setMensagem('primary', 'Preencha os dados para cadastrar um novo cliente.');
-      document.getElementById('nome').focus();
+    });
+
+    btnVoltarLista.addEventListener('click', () => {
+      limparFormulario();
+      mostrarLista();
+      if (!mensagensEl.innerHTML.trim()) {
+        setMensagem('primary', 'Busque um cliente para editar ou clique em "Novo Cliente".');
+      }
     });
 
     formCliente.addEventListener('submit', async (event) => {
       event.preventDefault();
       formCliente.classList.add('was-validated');
-      tipoPessoaSelect.setCustomValidity('');
+
       const documento = formatarDocumento(documentoInput.value);
-      const tipoPessoaSelecionado = tipoPessoaSelect.value;
-      if (documento && !tipoPessoaSelecionado) {
-        tipoPessoaSelect.setCustomValidity('Selecione o tipo de pessoa ao informar CPF/CNPJ.');
+      let tipoPessoaSelecionado = (tipoPessoaSelect.value || 'F').toUpperCase();
+      if (!['F', 'J'].includes(tipoPessoaSelecionado)) {
+        tipoPessoaSelecionado = 'F';
+        tipoPessoaSelect.value = 'F';
       }
 
       if (!formCliente.reportValidity()) {
-        if (tipoPessoaSelect.validationMessage) {
-          setMensagem('warning', tipoPessoaSelect.validationMessage);
-          tipoPessoaSelect.focus();
-        }
         return;
       }
 
       const dados = {
-        id: document.getElementById('clienteId').value,
-        nome: document.getElementById('nome').value.trim(),
+        id: clienteIdInput.value,
+        nome: nomeInput.value.trim(),
         tipoPessoa: tipoPessoaSelecionado,
         documento,
-        celular: document.getElementById('celular').value.trim(),
-        telefone: document.getElementById('telefone').value.trim(),
-        endereco: document.getElementById('endereco').value.trim(),
-        bairro: document.getElementById('bairro').value.trim(),
-        cidade: document.getElementById('cidade').value.trim(),
-        estado: document.getElementById('estado').value.trim(),
-        cep: formatarDocumento(document.getElementById('cep').value),
+        celular: celularInput.value.trim(),
+        telefone: telefoneInput.value.trim(),
+        endereco: enderecoInput.value.trim(),
+        bairro: bairroInput.value.trim(),
+        cidade: cidadeInput.value.trim(),
+        estado: estadoInput.value.trim(),
+        cep: formatarDocumento(cepInput.value),
       };
 
       try {
         const resultado = await salvarCliente(dados);
         setMensagem('success', resultado.mensagem || 'Cliente salvo com sucesso.');
-        const clienteRetornado = resultado.cliente;
+        const clienteRetornado = resultado.cliente && typeof resultado.cliente === 'object' ? resultado.cliente : null;
+        let chaveAtualizada = null;
+
         if (clienteRetornado) {
-          const indice = clientes.findIndex(c => String(c.id) === String(clienteRetornado.id));
-          if (indice >= 0) {
-            clientes[indice] = clienteRetornado;
-          } else {
-            clientes.unshift(clienteRetornado);
+          chaveAtualizada = obterChaveCliente(clienteRetornado.id);
+          const saldoAtual = obterSaldoRegistrado(chaveAtualizada);
+          if (typeof saldoAtual === 'number') {
+            clienteRetornado.saldoCrediario = saldoAtual;
           }
+
+          const indice = clientes.findIndex(c => obterChaveCliente(c.id) === chaveAtualizada);
+          if (indice >= 0) {
+            const saldoAnterior = typeof clientes[indice].saldoCrediario === 'number'
+              ? clientes[indice].saldoCrediario
+              : (typeof saldoAtual === 'number' ? saldoAtual : null);
+            clientes[indice] = { ...clienteRetornado, saldoCrediario: saldoAnterior };
+          } else {
+            clientes.unshift({
+              ...clienteRetornado,
+              saldoCrediario: typeof saldoAtual === 'number' ? saldoAtual : null,
+            });
+          }
+        }
+
+        limparFormulario();
+        mostrarLista();
+
+        if (clienteRetornado) {
           atualizarListaClientes(buscaClienteInput.value);
-          preencherFormulario(clienteRetornado);
+          if (chaveAtualizada !== null) {
+            agendarSaldoCliente(chaveAtualizada, true);
+          }
         } else {
           carregarClientes();
         }
@@ -407,5 +811,6 @@ if (!isset($_SESSION['usuario'])) {
     carregarClientes();
     setMensagem('primary', 'Busque um cliente para editar ou clique em "Novo Cliente".');
   </script>
+
 </body>
 </html>
