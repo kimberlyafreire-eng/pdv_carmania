@@ -225,6 +225,7 @@ $dadosResposta = ['data' => $clientesNormalizados];
 if ($db instanceof SQLite3) {
     try {
         upsertClientes($db, $todosClientes);
+        removerClientesForaDaLista($db, array_column($clientesNormalizados, 'id'));
         $clientesLocal = buscarClientesLocalmente($db);
         if (!empty($clientesLocal)) {
             $dadosResposta = ['data' => $clientesLocal];
