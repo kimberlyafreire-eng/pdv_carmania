@@ -127,6 +127,55 @@ function upsertClientes(SQLite3 $db, array $clientes): void
 }
 
 /**
+ * Remove do banco local os clientes que não estão presentes na lista fornecida.
+ */
+function removerClientesForaDaLista(SQLite3 $db, array $idsAtuais): void
+{
+    $idsNormalizados = [];
+
+    foreach ($idsAtuais as $id) {
+        if (!is_scalar($id)) {
+            continue;
+        }
+
+        $idNormalizado = trim((string) $id);
+        if ($idNormalizado === '') {
+            continue;
+        }
+
+        $idsNormalizados[$idNormalizado] = true;
+    }
+
+    if (empty($idsNormalizados)) {
+        $db->exec('DELETE FROM clientes');
+        return;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($idsNormalizados), '?'));
+    $stmt = $db->prepare("DELETE FROM clientes WHERE id NOT IN ($placeholders)");
+    if (!$stmt instanceof SQLite3Stmt) {
+        $mensagemErro = trim($db->lastErrorMsg() ?: '');
+        throw new RuntimeException('Não foi possível preparar a limpeza de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
+    }
+
+    $indice = 1;
+    foreach (array_keys($idsNormalizados) as $id) {
+        $stmt->bindValue($indice, $id, SQLITE3_TEXT);
+        $indice++;
+    }
+
+    $resultado = $stmt->execute();
+    if ($resultado === false) {
+        $stmt->close();
+        throw new RuntimeException('Falha ao remover clientes ausentes da lista informada.');
+    }
+
+    $resultado->finalize();
+    $stmt->clear();
+    $stmt->close();
+}
+
+/**
  * Garante que os clientes presentes no cache JSON também estejam no banco local.
  */
 function importarClientesCache(SQLite3 $db, string $cachePath): void
