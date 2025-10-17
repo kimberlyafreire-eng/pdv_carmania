@@ -924,6 +924,13 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       return true;
     }
 
+    function formatarDataISOLocal(data) {
+      const ano = data.getFullYear();
+      const mes = String(data.getMonth() + 1).padStart(2, '0');
+      const dia = String(data.getDate()).padStart(2, '0');
+      return `${ano}-${mes}-${dia}`;
+    }
+
     async function verificarCaixaDepositoAberto() {
       if (!depositoSelecionado || !depositoSelecionado.id) {
         throw new Error('Depósito não selecionado.');
@@ -963,7 +970,23 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       const status = json && json.caixa && json.caixa.status
         ? String(json.caixa.status).toLowerCase()
         : '';
-      return status === 'aberto';
+
+      let dataAbertura = null;
+      const movimentos = json && Array.isArray(json.movimentos) ? json.movimentos : [];
+      if (movimentos.length > 0) {
+        const movimentoAbertura = movimentos.find((mov) => {
+          return mov && typeof mov.tipoSlug === 'string' && mov.tipoSlug.toLowerCase() === 'abertura';
+        });
+        if (movimentoAbertura && movimentoAbertura.dataHora) {
+          const dataStr = String(movimentoAbertura.dataHora);
+          dataAbertura = dataStr.slice(0, 10);
+        }
+      }
+
+      return {
+        aberto: status === 'aberto',
+        dataAbertura,
+      };
     }
 
     async function irParaPagamento() {
@@ -971,18 +994,27 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       if (!depositoSelecionado) return alert("Selecione um estoque.");
       if (!verificarEstoqueAntesVenda()) return;
 
-      let caixaAberto = false;
+      let caixaInfo = { aberto: false, dataAbertura: null };
       try {
-        caixaAberto = await verificarCaixaDepositoAberto();
+        caixaInfo = await verificarCaixaDepositoAberto();
       } catch (erro) {
         alert(erro.message || 'Não foi possível verificar o status do caixa.');
         return;
       }
 
-      if (!caixaAberto) {
+      if (!caixaInfo.aberto) {
         const nomeDeposito = depositoSelecionado.nome ? ` do depósito ${depositoSelecionado.nome}` : '';
         alert(`O caixa${nomeDeposito} está fechado. Abra o caixa antes de finalizar a venda.`);
         return;
+      }
+
+      if (caixaInfo.dataAbertura) {
+        const hoje = formatarDataISOLocal(new Date());
+        if (caixaInfo.dataAbertura !== hoje) {
+          const nomeDeposito = depositoSelecionado.nome ? ` do depósito ${depositoSelecionado.nome}` : '';
+          alert(`O caixa${nomeDeposito} foi aberto em ${caixaInfo.dataAbertura}. Feche o caixa e abra novamente com a data atual para prosseguir.`);
+          return;
+        }
       }
 
       const total = totalCarrinho();
