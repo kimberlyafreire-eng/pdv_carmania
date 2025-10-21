@@ -310,6 +310,7 @@ if (!isset($_SESSION['usuario'])) {
   <div id="reciboContainer"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
     const tabelaCorpo = document.getElementById('tabelaVendasCorpo');
     const semResultados = document.getElementById('semResultados');
@@ -332,6 +333,7 @@ if (!isset($_SESSION['usuario'])) {
     const detalhePagamentos = document.getElementById('detalhePagamentos');
     const detalheItens = document.getElementById('detalheItens');
     const reciboContainer = document.getElementById('reciboContainer');
+    let reciboImagemCache = null;
 
     const totalDiaEl = document.getElementById('totalDia');
     const totalMesEl = document.getElementById('totalMes');
@@ -619,12 +621,14 @@ if (!isset($_SESSION['usuario'])) {
     }
 
     function exibirRecibo(html) {
+      reciboImagemCache = null;
       reciboContainer.innerHTML = `
         <div class="recibo-wrapper">
           <div class="recibo-conteudo">${html}</div>
           <div class="recibo-acoes">
             <button type="button" class="btn btn-primary" id="btnImprimirRecibo">🖨 Imprimir</button>
             <button type="button" class="btn btn-secondary" id="btnCopiarRecibo">📋 Copiar</button>
+            <button type="button" class="btn btn-success" id="btnCompartilharRecibo">📤 Compartilhar</button>
             <button type="button" class="btn btn-outline-dark" id="btnFecharRecibo">Fechar</button>
           </div>
         </div>`;
@@ -632,6 +636,7 @@ if (!isset($_SESSION['usuario'])) {
       reciboContainer.classList.add('ativo');
       document.getElementById('btnImprimirRecibo')?.addEventListener('click', imprimirReciboAtual);
       document.getElementById('btnCopiarRecibo')?.addEventListener('click', copiarReciboAtual);
+      document.getElementById('btnCompartilharRecibo')?.addEventListener('click', compartilharReciboAtual);
       document.getElementById('btnFecharRecibo')?.addEventListener('click', fecharRecibo);
     }
 
@@ -639,6 +644,7 @@ if (!isset($_SESSION['usuario'])) {
       reciboContainer.classList.remove('ativo');
       reciboContainer.innerHTML = '';
       delete reciboContainer.dataset.htmlRecibo;
+      reciboImagemCache = null;
     }
 
     function imprimirReciboAtual() {
@@ -658,22 +664,89 @@ if (!isset($_SESSION['usuario'])) {
       popup.print();
     }
 
-    async function copiarReciboAtual() {
-      const html = reciboContainer.dataset.htmlRecibo || '';
-      if (!html) {
-        alert('Recibo não disponível no momento.');
-        return;
+    async function gerarImagemRecibo() {
+      if (reciboImagemCache) {
+        return reciboImagemCache;
       }
+      if (typeof html2canvas !== 'function') {
+        throw new Error('Ferramenta de captura indisponível.');
+      }
+      const reciboElemento = reciboContainer.querySelector('.recibo-conteudo > *:first-child');
+      if (!reciboElemento) {
+        throw new Error('Recibo não encontrado na tela.');
+      }
+      const canvas = await html2canvas(reciboElemento, { scale: 2, backgroundColor: '#ffffff' });
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((resultado) => {
+          if (resultado) {
+            resolve(resultado);
+          } else {
+            reject(new Error('Não foi possível gerar a imagem do recibo.'));
+          }
+        }, 'image/png');
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      reciboImagemCache = { blob, dataUrl };
+      return reciboImagemCache;
+    }
+
+    async function copiarReciboAtual() {
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(html);
-          alert('Recibo copiado!');
-        } else {
-          throw new Error('Clipboard API não suportada.');
+        const { blob, dataUrl } = await gerarImagemRecibo();
+        if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+          const item = new ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          alert('Recibo copiado como imagem!');
+          return;
         }
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(dataUrl);
+          alert('Imagem do recibo copiada como texto (data URL).');
+          return;
+        }
+        throw new Error('Clipboard API não suportada.');
       } catch (erro) {
         console.error(erro);
         alert('Não foi possível copiar o recibo automaticamente.');
+      }
+    }
+
+    async function compartilharReciboAtual() {
+      try {
+        const { blob, dataUrl } = await gerarImagemRecibo();
+        const nomeArquivo = `recibo-${new Date().toISOString().slice(0, 10)}.png`;
+        const arquivo = new File([blob], nomeArquivo, { type: 'image/png' });
+        const podeCompartilharArquivo = typeof navigator.canShare === 'function'
+          ? navigator.canShare({ files: [arquivo] })
+          : true;
+
+        if (navigator.share && podeCompartilharArquivo) {
+          await navigator.share({
+            title: 'Recibo PDV Carmania',
+            text: 'Confira o recibo da venda.',
+            files: [arquivo]
+          });
+          return;
+        }
+
+        const novaJanela = window.open('', '_blank');
+        if (novaJanela) {
+          novaJanela.document.write(`
+            <html>
+              <head><title>${nomeArquivo}</title></head>
+              <body style="margin:0;display:flex;align-items:center;justify-content:center;background:#f5f5f5;">
+                <img src="${dataUrl}" alt="Recibo" style="max-width:100%;height:auto;" />
+              </body>
+            </html>`);
+          novaJanela.document.close();
+          alert('Compartilhamento nativo indisponível. Uma nova janela com o recibo foi aberta.');
+          return;
+        }
+
+        throw new Error('Compartilhamento não suportado neste dispositivo.');
+      } catch (erro) {
+        console.error(erro);
+        alert('Não foi possível compartilhar o recibo. ' + (erro?.message || ''));
       }
     }
 
