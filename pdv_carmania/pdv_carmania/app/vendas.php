@@ -104,6 +104,39 @@ if (!isset($_SESSION['usuario'])) {
       color: #212529;
       word-break: break-word;
     }
+    #reciboContainer {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 2000;
+    }
+    #reciboContainer.ativo {
+      display: flex;
+    }
+    #reciboContainer .recibo-wrapper {
+      max-width: 640px;
+      width: 100%;
+      max-height: 90vh;
+      overflow: auto;
+      background: #ffffff;
+      border-radius: 14px;
+      padding: 1.5rem 1.25rem 1.75rem;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    }
+    #reciboContainer .recibo-acoes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 1rem;
+    }
+    #reciboContainer .recibo-acoes .btn {
+      min-width: 140px;
+    }
     @media (max-width: 576px) {
       .resumo-card {
         padding: 1.25rem;
@@ -274,6 +307,8 @@ if (!isset($_SESSION['usuario'])) {
     </div>
   </div>
 
+  <div id="reciboContainer"></div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     const tabelaCorpo = document.getElementById('tabelaVendasCorpo');
@@ -296,6 +331,7 @@ if (!isset($_SESSION['usuario'])) {
     const detalheDesconto = document.getElementById('detalheDesconto');
     const detalhePagamentos = document.getElementById('detalhePagamentos');
     const detalheItens = document.getElementById('detalheItens');
+    const reciboContainer = document.getElementById('reciboContainer');
 
     const totalDiaEl = document.getElementById('totalDia');
     const totalMesEl = document.getElementById('totalMes');
@@ -366,19 +402,36 @@ if (!isset($_SESSION['usuario'])) {
           <td>${pagamentosTexto || '-'}</td>
           <td>${venda.usuario_nome || venda.usuario_login || '-'}</td>
           <td class="text-end">
-            <button type="button" class="btn btn-outline-danger btn-sm cancelar-venda-btn" title="Cancelar venda">
-              Cancelar venda
-            </button>
+            <div class="d-flex gap-2 justify-content-end flex-wrap">
+              <button type="button" class="btn btn-outline-secondary btn-sm recibo-venda-btn" title="Gerar recibo da venda">
+                Gerar recibo
+              </button>
+              <button type="button" class="btn btn-outline-danger btn-sm cancelar-venda-btn" title="Cancelar venda">
+                Cancelar venda
+              </button>
+            </div>
           </td>
         `;
 
         tr.addEventListener('click', (event) => {
+          if (event.target.closest('.recibo-venda-btn')) {
+            event.stopPropagation();
+            return;
+          }
           if (event.target.closest('.cancelar-venda-btn')) {
             event.stopPropagation();
             return;
           }
           abrirDetalheVenda(venda.id);
         });
+
+        const btnRecibo = tr.querySelector('.recibo-venda-btn');
+        if (btnRecibo) {
+          btnRecibo.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            await gerarReciboVenda(venda.id, btnRecibo);
+          });
+        }
 
         const btnCancelar = tr.querySelector('.cancelar-venda-btn');
         if (btnCancelar) {
@@ -517,10 +570,112 @@ if (!isset($_SESSION['usuario'])) {
       voltarParaLista();
     });
 
+    reciboContainer.addEventListener('click', (event) => {
+      if (event.target === reciboContainer) {
+        fecharRecibo();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && reciboContainer.classList.contains('ativo')) {
+        fecharRecibo();
+      }
+    });
+
     formFiltros.addEventListener('submit', (event) => {
       event.preventDefault();
       carregarVendas();
     });
+
+    async function gerarReciboVenda(id, botao) {
+      if (!id) return;
+      limparMensagem();
+      let labelOriginal = '';
+      if (botao) {
+        labelOriginal = botao.innerHTML;
+        botao.disabled = true;
+        botao.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Gerando...';
+      }
+      try {
+        const resposta = await fetch(`../api/venda-recibo.php?id=${encodeURIComponent(id)}&nocache=${Date.now()}`);
+        if (!resposta.ok) {
+          throw new Error(`Falha ao gerar recibo (HTTP ${resposta.status})`);
+        }
+        const json = await resposta.json();
+        if (!json.ok || !json.reciboHtml) {
+          throw new Error(json.erro || 'Não foi possível gerar o recibo.');
+        }
+        exibirRecibo(json.reciboHtml);
+      } catch (erro) {
+        console.error(erro);
+        exibirMensagem('danger', erro.message || 'Falha ao gerar o recibo.');
+        setTimeout(limparMensagem, 4000);
+      } finally {
+        if (botao) {
+          botao.disabled = false;
+          botao.innerHTML = labelOriginal || 'Gerar recibo';
+        }
+      }
+    }
+
+    function exibirRecibo(html) {
+      reciboContainer.innerHTML = `
+        <div class="recibo-wrapper">
+          <div class="recibo-conteudo">${html}</div>
+          <div class="recibo-acoes">
+            <button type="button" class="btn btn-primary" id="btnImprimirRecibo">🖨 Imprimir</button>
+            <button type="button" class="btn btn-secondary" id="btnCopiarRecibo">📋 Copiar</button>
+            <button type="button" class="btn btn-outline-dark" id="btnFecharRecibo">Fechar</button>
+          </div>
+        </div>`;
+      reciboContainer.dataset.htmlRecibo = html;
+      reciboContainer.classList.add('ativo');
+      document.getElementById('btnImprimirRecibo')?.addEventListener('click', imprimirReciboAtual);
+      document.getElementById('btnCopiarRecibo')?.addEventListener('click', copiarReciboAtual);
+      document.getElementById('btnFecharRecibo')?.addEventListener('click', fecharRecibo);
+    }
+
+    function fecharRecibo() {
+      reciboContainer.classList.remove('ativo');
+      reciboContainer.innerHTML = '';
+      delete reciboContainer.dataset.htmlRecibo;
+    }
+
+    function imprimirReciboAtual() {
+      const html = reciboContainer.dataset.htmlRecibo || '';
+      if (!html) {
+        alert('Recibo não disponível no momento.');
+        return;
+      }
+      const popup = window.open('', '_blank');
+      if (!popup) {
+        alert('Não foi possível abrir a janela de impressão.');
+        return;
+      }
+      popup.document.write('<html><head><title>Recibo PDV Carmania</title></head><body>' + html + '</body></html>');
+      popup.document.close();
+      popup.focus();
+      popup.print();
+    }
+
+    async function copiarReciboAtual() {
+      const html = reciboContainer.dataset.htmlRecibo || '';
+      if (!html) {
+        alert('Recibo não disponível no momento.');
+        return;
+      }
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(html);
+          alert('Recibo copiado!');
+        } else {
+          throw new Error('Clipboard API não suportada.');
+        }
+      } catch (erro) {
+        console.error(erro);
+        alert('Não foi possível copiar o recibo automaticamente.');
+      }
+    }
 
     function inicializarPaginaVendas() {
       const hoje = new Date().toISOString().slice(0, 10);
