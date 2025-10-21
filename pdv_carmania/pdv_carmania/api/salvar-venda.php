@@ -7,6 +7,7 @@ $usuarioSessao = isset($_SESSION['usuario']) ? trim((string)$_SESSION['usuario']
 require_once __DIR__ . '/lib/token-helper.php';
 require_once __DIR__ . '/lib/caixa-helper.php';
 require_once __DIR__ . '/lib/vendas-helper.php';
+require_once __DIR__ . '/lib/recibo-helper.php';
 
 // ⚙️ Caminhos e configs
 $logDir  = __DIR__ . '/../logs';
@@ -477,42 +478,6 @@ if ($pedidoId) {
 }
 
 // 🧾 Recibo HTML
-$itensHtml = '';
-$atendenteHtml = '';
-$totalItens = count($carrinho);
-$totalQuantidade = 0;
-if ($usuarioRecibo) {
-    $atendenteHtml = "  <p style='margin:2px 0;'>Atendente: <b>" . htmlspecialchars($usuarioRecibo, ENT_QUOTES, 'UTF-8') . "</b></p>";
-}
-foreach ($carrinho as $it) {
-    $nome = htmlspecialchars($it['nome'] ?? '', ENT_QUOTES, 'UTF-8');
-    $qtd  = (int)$it['quantidade'];
-    $sub  = number_format($it['preco']*$qtd,2,',','.');
-    $totalQuantidade += $qtd;
-    $descricao = trim("{$qtd}x {$nome}");
-    $itensHtml .= "
-      <tr>
-        <td style='text-align:left;'>$descricao</td>
-        <td style='text-align:right;'>R$ {$sub}</td>
-      </tr>";
-}
-
-$formasHtml = '';
-foreach ($nomesFormas as $f) {
-    $valorPrincipal = number_format($f['valor'],2,',','.');
-    $detalheLinha = '';
-    if (!empty($f['troco'])) {
-        $valorAplicadoFmt = number_format($f['valorAplicado'] ?? $f['valor'], 2, ',', '.');
-        $trocoFmt = number_format($f['troco'], 2, ',', '.');
-        $detalheLinha = "<br><small style='color:#6c757d;'>Aplicado: R$ {$valorAplicadoFmt} &middot; Troco: R$ {$trocoFmt}</small>";
-    }
-    $formasHtml .= "
-      <tr>
-        <td style='text-align:left;'>{$f['nome']}</td>
-        <td style='text-align:right;'><b>R$ {$valorPrincipal}</b>{$detalheLinha}</td>
-      </tr>";
-}
-
 $resumoCrediarioHtml = '';
 if ($isCrediario && $clienteId) {
     // Helper p/ chamar saldo.php por POST JSON no mesmo host
@@ -595,102 +560,32 @@ if ($isCrediario && $clienteId) {
     logMsg("💳 Saldo estimado anterior: {$saldoAnteriorEstimado} | Compra: {$totalFinal} | Saldo consultado: {$novoSaldo}");
 }
 
-$reciboHtml = <<<HTML
-<style>
-  #recibo-preview-stage {
-    width:100vw;
-    min-height:100vh;
-    margin:0;
-    padding:clamp(8px,4vh,24px) 0;
-    display:flex;
-    justify-content:center;
-    align-items:flex-start;
-    box-sizing:border-box;
-    overflow:auto;
-    -webkit-overflow-scrolling:touch;
-    background:transparent;
-  }
-  #recibo-preview {
-    width:min(92vw, 60ch);
-    max-width:100%;
-    font-family:monospace;
-    font-size:13px;
-    line-height:1.35;
-    text-align:left;
-    background:#fff;
-    color:#111;
-    padding:14px 12px 20px;
-    box-sizing:border-box;
-    margin:0 auto;
-    box-shadow:0 0 0 1px rgba(0,0,0,0.04);
-  }
-  #recibo-preview table {
-    width:100%;
-    border-collapse:collapse;
-    font-size:0.92em;
-  }
-  #recibo-preview td {
-    padding:2px 0;
-    text-align:left;
-    vertical-align:top;
-  }
-  #recibo-preview td:last-child {
-    text-align:right;
-  }
-  #recibo-preview td:first-child {
-    padding-right:8px;
-    word-break:break-word;
-    white-space:pre-wrap;
-  }
-  #recibo-preview .recibo-divider {
-    border:0;
-    border-top:1px solid #e0e0e0;
-    margin:10px 0;
-  }
-  @media (max-width: 768px) {
-    #recibo-preview-stage {
-      padding:clamp(12px,6vh,32px) 0;
+$itensRecibo = [];
+foreach ($carrinho as $item) {
+    $quantidade = (int) ($item['quantidade'] ?? 0);
+    if ($quantidade <= 0) {
+        continue;
     }
-    #recibo-preview {
-      width:min(94vw, 58ch);
-      font-size:13px;
-    }
-  }
-</style>
-<div id='recibo-preview-stage'>
-  <div id='recibo-preview'>
-    <h4 style='margin:6px 0;color:#dc3545;text-align:center;'>Carmania Produtos Automotivos</h4>
-HTML;
-
-$reciboHtml .= $atendenteHtml;
-
-$reciboHtml .= "    <p style='margin:2px 0;'>Pedido: <b>" . ($pedidoId ?? '-') . "</b></p>";
-$reciboHtml .= "    <p style='margin:2px 0;'>Cliente: <b>" . htmlspecialchars($clienteNome, ENT_QUOTES, 'UTF-8') . "</b></p>";
-$reciboHtml .= "    <hr class='recibo-divider'>";
-if ($totalItens > 0) {
-    $labelItens = $totalItens === 1 ? 'item' : 'itens';
-    $reciboHtml .= "    <p style='margin:4px 0;font-weight:bold;'>" . number_format($totalItens, 0, '', '.') . " " . $labelItens . " (Qtd " . number_format($totalQuantidade, 0, '', '.') . ")</p>";
+    $itensRecibo[] = [
+        'nome' => (string) ($item['nome'] ?? ''),
+        'quantidade' => $quantidade,
+        'valorUnitario' => (float) ($item['preco'] ?? 0),
+        'subtotal' => (float) ($item['preco'] ?? 0) * $quantidade,
+    ];
 }
-$reciboHtml .= "    <table style='margin-bottom:6px;'>$itensHtml</table>";
-$reciboHtml .= "    <hr class='recibo-divider'>";
-$reciboHtml .= "    <table>";
-$reciboHtml .= "      <tr><td>Total Bruto</td><td>R$ " . number_format($totalBruto, 2, ',', '.') . "</td></tr>";
-if ($descontoAplicado>0) {
-    $reciboHtml .= "      <tr><td>Desconto</td><td>R$ " . number_format($descontoAplicado, 2, ',', '.') . "</td></tr>";
-}
-$reciboHtml .= "      <tr><td colspan='2'><hr class='recibo-divider'></td></tr>";
-$reciboHtml .= "      <tr><td><b>Total Final</b></td><td><b>R$ " . number_format($totalFinal, 2, ',', '.') . "</b></td></tr>";
-$reciboHtml .= "    </table>";
-$reciboHtml .= "    <hr class='recibo-divider'>";
-$reciboHtml .= "    <p style='margin:3px 0; font-weight:bold;'>Pagamentos</p>";
-$reciboHtml .= "    <table>$formasHtml</table>";
-$reciboHtml .= $resumoCrediarioHtml;
-$reciboHtml .= "    <hr class='recibo-divider'>";
-$reciboHtml .= "    <p style='margin:2px 0;'>Estoque: <b>" . htmlspecialchars($deposito['nome'] ?? 'Não informado', ENT_QUOTES, 'UTF-8') . "</b></p>";
-$reciboHtml .= "    <hr class='recibo-divider'>";
-$reciboHtml .= "    <p style='margin:5px 0; font-size:0.9em; color:#222;'>Obrigado pela preferência!</p>";
-$reciboHtml .= "  </div>";
-$reciboHtml .= "</div>";
+
+$reciboHtml = gerarReciboHtml([
+    'pedidoId' => $pedidoId ?? '-',
+    'clienteNome' => $clienteNome,
+    'atendente' => $usuarioRecibo,
+    'depositoNome' => $deposito['nome'] ?? $depositoNome ?? '',
+    'totalBruto' => $totalBruto,
+    'descontoAplicado' => $descontoAplicado,
+    'totalFinal' => $totalFinal,
+    'itens' => $itensRecibo,
+    'formas' => $nomesFormas,
+    'resumoCrediarioHtml' => $resumoCrediarioHtml,
+]);
 
 echo json_encode([
     'ok'=>true,
