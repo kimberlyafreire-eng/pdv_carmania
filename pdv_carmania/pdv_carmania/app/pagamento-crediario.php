@@ -406,6 +406,26 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     let pagamentos = [];
     let formaSelecionada = null;
 
+    const telaPagamentoEl = document.getElementById("telaPagamento");
+    const reciboContainerEl = document.getElementById("reciboContainer");
+    const btnConcluirEl = document.getElementById("btnConcluir");
+
+    function mostrarProcessandoRecibo() {
+      telaPagamentoEl.style.display = "none";
+      reciboContainerEl.classList.add("ativo");
+      reciboContainerEl.innerHTML = `
+        <div class="recibo-area flex-column text-center align-items-center">
+          <div class="spinner-border text-danger mb-3" role="status"></div>
+          <h4 class="fw-bold text-danger mb-0">Aguarde Gerando Recibo</h4>
+        </div>`;
+    }
+
+    function restaurarTelaPagamento() {
+      reciboContainerEl.classList.remove("ativo");
+      reciboContainerEl.innerHTML = "";
+      telaPagamentoEl.style.display = "";
+    }
+
     function voltar() { window.location.href = "receber.php"; }
 
     function selecionarForma(nome, id) {
@@ -480,12 +500,15 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
         statusPagamento.classList.add("completo");
       }
 
-      document.getElementById("btnConcluir").disabled = pagamentos.length === 0;
+      btnConcluirEl.disabled = pagamentos.length === 0;
     }
 
     async function concluirPagamento() {
       if (!cliente?.id) return alert("Cliente inválido.");
       if (!pagamentos.length) return alert("Adicione pelo menos uma forma de pagamento.");
+
+      btnConcluirEl.disabled = true;
+      mostrarProcessandoRecibo();
 
       const payload = {
         clienteId: cliente.id,
@@ -505,20 +528,21 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
         const data = await res.json();
         if (!res.ok || !data.ok) {
           alert("Erro ao registrar baixa: " + (data.erro || JSON.stringify(data)));
+          restaurarTelaPagamento();
+          btnConcluirEl.disabled = false;
           return;
         }
 
         localStorage.removeItem("clienteRecebimento");
         localStorage.removeItem("saldoCrediario");
 
-        document.getElementById("telaPagamento").style.display = "none";
-        const reciboContainer = document.getElementById("reciboContainer");
-        reciboContainer.classList.add("ativo");
-        reciboContainer.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
+        telaPagamentoEl.style.display = "none";
+        reciboContainerEl.classList.add("ativo");
+        reciboContainerEl.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
 
         await gerarImagemRecibo();
 
-        reciboContainer.innerHTML += `
+        reciboContainerEl.innerHTML += `
           <div class="recibo-acoes">
             <button class="btn btn-primary" onclick="imprimirRecibo()">🖨 Imprimir</button>
             <button class="btn btn-secondary" onclick="copiarRecibo()">📋 Copiar</button>
@@ -530,6 +554,8 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       } catch (err) {
         console.error(err);
         alert("Erro inesperado: " + err);
+        restaurarTelaPagamento();
+        btnConcluirEl.disabled = false;
       }
     }
 
