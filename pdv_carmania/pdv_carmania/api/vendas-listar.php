@@ -20,6 +20,7 @@ try {
 $dataInicio = isset($_GET['dataInicio']) ? trim((string) $_GET['dataInicio']) : '';
 $dataFim = isset($_GET['dataFim']) ? trim((string) $_GET['dataFim']) : '';
 $formaPagamentoId = isset($_GET['formaPagamentoId']) ? trim((string) $_GET['formaPagamentoId']) : '';
+$vendedorParam = isset($_GET['vendedor']) ? trim((string) $_GET['vendedor']) : '';
 
 $hoje = date('Y-m-d');
 if ($dataInicio === '') {
@@ -42,6 +43,69 @@ if ($formaPagamentoId !== '') {
     $formaPagamentoFiltro = (int) $formaPagamentoId;
 }
 
+$lowercase = static function (string $texto): string {
+    return function_exists('mb_strtolower') ? mb_strtolower($texto, 'UTF-8') : strtolower($texto);
+};
+
+$usuarioFiltro = null;
+if ($vendedorParam !== '') {
+    $tipo = 'id';
+    $valorBruto = $vendedorParam;
+    $partes = explode(':', $vendedorParam, 2);
+    if (count($partes) === 2) {
+        [$tipo, $valorBruto] = $partes;
+    }
+
+    $tipo = trim((string) $tipo);
+    $valorBruto = trim((string) $valorBruto);
+
+    switch ($tipo) {
+        case 'id':
+            if ($valorBruto === '' || !ctype_digit($valorBruto)) {
+                echo json_encode(['ok' => false, 'erro' => 'Vendedor inválido (id)']);
+                exit();
+            }
+            $usuarioFiltro = [
+                'condicao' => 'v.usuario_id = :usuario_id_filtro',
+                'parametro' => ':usuario_id_filtro',
+                'valor' => (int) $valorBruto,
+                'tipo' => SQLITE3_INTEGER,
+            ];
+            break;
+        case 'login':
+        case 'nome':
+            if ($valorBruto === '') {
+                echo json_encode(['ok' => false, 'erro' => 'Vendedor inválido']);
+                exit();
+            }
+            $valorDecodificado = rawurldecode($valorBruto);
+            $valorNormalizado = $lowercase(trim($valorDecodificado));
+            if ($valorNormalizado === '') {
+                echo json_encode(['ok' => false, 'erro' => 'Vendedor inválido']);
+                exit();
+            }
+            if ($tipo === 'login') {
+                $usuarioFiltro = [
+                    'condicao' => 'LOWER(TRIM(IFNULL(v.usuario_login, ""))) = :usuario_login_filtro',
+                    'parametro' => ':usuario_login_filtro',
+                    'valor' => $valorNormalizado,
+                    'tipo' => SQLITE3_TEXT,
+                ];
+            } else {
+                $usuarioFiltro = [
+                    'condicao' => 'LOWER(TRIM(IFNULL(v.usuario_nome, ""))) = :usuario_nome_filtro',
+                    'parametro' => ':usuario_nome_filtro',
+                    'valor' => $valorNormalizado,
+                    'tipo' => SQLITE3_TEXT,
+                ];
+            }
+            break;
+        default:
+            echo json_encode(['ok' => false, 'erro' => 'Vendedor inválido']);
+            exit();
+    }
+}
+
 try {
     $sql = 'SELECT v.id, v.data_hora, v.contato_id, v.contato_nome, v.usuario_nome, v.usuario_login,
                    v.valor_total, v.valor_desconto, v.situacao_id, s.nome AS situacao_nome
@@ -53,6 +117,10 @@ try {
         $sql .= ' AND EXISTS (SELECT 1 FROM venda_pagamentos vp WHERE vp.venda_id = v.id AND vp.forma_pagamento_id = :forma)';
     }
 
+    if ($usuarioFiltro !== null) {
+        $sql .= ' AND ' . $usuarioFiltro['condicao'];
+    }
+
     $sql .= ' ORDER BY v.data_hora DESC';
 
     $stmt = $db->prepare($sql);
@@ -60,6 +128,9 @@ try {
     $stmt->bindValue(':fim', $dataFim, SQLITE3_TEXT);
     if ($formaPagamentoFiltro !== null) {
         $stmt->bindValue(':forma', $formaPagamentoFiltro, SQLITE3_INTEGER);
+    }
+    if ($usuarioFiltro !== null) {
+        $stmt->bindValue($usuarioFiltro['parametro'], $usuarioFiltro['valor'], $usuarioFiltro['tipo']);
     }
     $result = $stmt->execute();
 
@@ -115,6 +186,41 @@ try {
         ];
     }
 
+    $usuariosMap = [];
+    $resUsuarios = $db->query('SELECT usuario_id, usuario_login, usuario_nome FROM vendas');
+    while ($row = $resUsuarios->fetchArray(SQLITE3_ASSOC)) {
+        $id = isset($row['usuario_id']) ? (int) $row['usuario_id'] : null;
+        $login = trim((string) ($row['usuario_login'] ?? ''));
+        $nome = trim((string) ($row['usuario_nome'] ?? ''));
+
+        if ($id === null && $login === '' && $nome === '') {
+            continue;
+        }
+
+        if ($id !== null) {
+            $chave = 'id:' . $id;
+        } elseif ($login !== '') {
+            $chave = 'login:' . $lowercase($login);
+        } else {
+            $chave = 'nome:' . $lowercase($nome);
+        }
+
+        if (!isset($usuariosMap[$chave])) {
+            $usuariosMap[$chave] = [
+                'id' => $id,
+                'login' => $login !== '' ? $login : null,
+                'nome' => $nome !== '' ? $nome : null,
+            ];
+        }
+    }
+
+    $usuariosDisponiveis = array_values($usuariosMap);
+    usort($usuariosDisponiveis, static function (array $a, array $b) use ($lowercase): int {
+        $rotuloA = $a['nome'] ?? $a['login'] ?? '';
+        $rotuloB = $b['nome'] ?? $b['login'] ?? '';
+        return strcmp($lowercase((string) $rotuloA), $lowercase((string) $rotuloB));
+    });
+
     $stmtDia = $db->prepare('SELECT COALESCE(SUM(valor_total), 0) AS total FROM vendas WHERE situacao_id = 9 AND DATE(data_hora) = :hoje');
     $stmtDia->bindValue(':hoje', $hoje, SQLITE3_TEXT);
     $totalDia = (float) ($stmtDia->execute()->fetchArray(SQLITE3_ASSOC)['total'] ?? 0);
@@ -134,10 +240,12 @@ try {
         ],
         'vendas' => $vendas,
         'formasPagamento' => $formasDisponiveis,
+        'usuarios' => $usuariosDisponiveis,
         'filtros' => [
             'dataInicio' => $dataInicio,
             'dataFim' => $dataFim,
             'formaPagamentoId' => $formaPagamentoFiltro,
+            'vendedor' => $vendedorParam,
         ],
     ]);
 } catch (Throwable $e) {
