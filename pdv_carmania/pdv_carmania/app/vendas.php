@@ -204,6 +204,12 @@ if (!isset($_SESSION['usuario'])) {
             <option value="">Todas as formas</option>
           </select>
         </div>
+        <div class="col-12 col-md-4 col-lg-3">
+          <label for="vendedor" class="form-label">Vendedor</label>
+          <select id="vendedor" name="vendedor" class="form-select">
+            <option value="">Todos os vendedores</option>
+          </select>
+        </div>
         <div class="col-12 col-lg-3 col-xl-2">
           <button class="btn btn-danger w-100" type="submit">Filtrar</button>
         </div>
@@ -318,6 +324,7 @@ if (!isset($_SESSION['usuario'])) {
     const mensagemVendas = document.getElementById('mensagemVendas');
     const formFiltros = document.getElementById('formFiltros');
     const formaPagamentoSelect = document.getElementById('formaPagamento');
+    const vendedorSelect = document.getElementById('vendedor');
     const listaSection = document.getElementById('listaVendasSection');
     const detalheSection = document.getElementById('detalheVendaSection');
     const btnVoltarLista = document.getElementById('btnVoltarLista');
@@ -374,6 +381,63 @@ if (!isset($_SESSION['usuario'])) {
         }
       });
       formaPagamentoSelect.value = selecionada;
+    }
+
+    function obterValorOpcaoVendedor(vendedor) {
+      if (!vendedor || typeof vendedor !== 'object') {
+        return '';
+      }
+      const id = Number(vendedor.id);
+      if (Number.isFinite(id)) {
+        return `id:${id}`;
+      }
+      const login = typeof vendedor.login === 'string' ? vendedor.login.trim() : '';
+      if (login) {
+        return `login:${encodeURIComponent(login)}`;
+      }
+      const nome = typeof vendedor.nome === 'string' ? vendedor.nome.trim() : '';
+      if (nome) {
+        return `nome:${encodeURIComponent(nome)}`;
+      }
+      return '';
+    }
+
+    function gerarRotuloVendedor(vendedor) {
+      if (!vendedor || typeof vendedor !== 'object') {
+        return '';
+      }
+      const nome = typeof vendedor.nome === 'string' ? vendedor.nome.trim() : '';
+      const login = typeof vendedor.login === 'string' ? vendedor.login.trim() : '';
+      if (nome && login && nome.toLowerCase() !== login.toLowerCase()) {
+        return `${nome} (${login})`;
+      }
+      return nome || login || '';
+    }
+
+    function popularVendedores(vendedores) {
+      if (!vendedorSelect) {
+        return;
+      }
+      const selecionado = vendedorSelect.value;
+      while (vendedorSelect.options.length > 1) {
+        vendedorSelect.remove(1);
+      }
+      const valoresAdicionados = new Set();
+      (Array.isArray(vendedores) ? vendedores : []).forEach(vendedor => {
+        const valor = obterValorOpcaoVendedor(vendedor);
+        const rotulo = gerarRotuloVendedor(vendedor);
+        if (!valor || !rotulo || valoresAdicionados.has(valor)) {
+          return;
+        }
+        const option = document.createElement('option');
+        option.value = valor;
+        option.textContent = rotulo;
+        vendedorSelect.appendChild(option);
+        valoresAdicionados.add(valor);
+      });
+      if (selecionado) {
+        vendedorSelect.value = valoresAdicionados.has(selecionado) ? selecionado : '';
+      }
     }
 
     function renderizarVendas(vendas) {
@@ -456,6 +520,7 @@ if (!isset($_SESSION['usuario'])) {
       const dataInicio = document.getElementById('dataInicio').value;
       const dataFim = document.getElementById('dataFim').value;
       const formaPagamento = formaPagamentoSelect.value;
+      const vendedorSelecionado = vendedorSelect ? vendedorSelect.value : '';
 
       if (dataInicio && dataFim && dataInicio > dataFim) {
         document.getElementById('dataInicio').value = dataFim;
@@ -468,6 +533,9 @@ if (!isset($_SESSION['usuario'])) {
       });
       if (formaPagamento) {
         params.append('formaPagamentoId', formaPagamento);
+      }
+      if (vendedorSelecionado) {
+        params.append('vendedor', vendedorSelecionado);
       }
 
       try {
@@ -485,6 +553,9 @@ if (!isset($_SESSION['usuario'])) {
         renderizarVendas(json.vendas || []);
         if (Array.isArray(json.formasPagamento)) {
           popularFormasPagamento(json.formasPagamento);
+        }
+        if (Array.isArray(json.usuarios)) {
+          popularVendedores(json.usuarios);
         }
       } catch (erro) {
         console.error(erro);
@@ -650,8 +721,43 @@ if (!isset($_SESSION['usuario'])) {
       if (!reciboHtmlEl || typeof html2canvas !== 'function') {
         return;
       }
+      let wrapperClonado = null;
       try {
-        const canvas = await html2canvas(reciboHtmlEl);
+        const clone = reciboHtmlEl.cloneNode(true);
+        clone.style.maxWidth = 'none';
+        clone.style.boxSizing = 'border-box';
+
+        wrapperClonado = document.createElement('div');
+        wrapperClonado.style.position = 'fixed';
+        wrapperClonado.style.left = '-9999px';
+        wrapperClonado.style.top = '0';
+        wrapperClonado.style.pointerEvents = 'none';
+        wrapperClonado.style.opacity = '0';
+        wrapperClonado.style.background = '#ffffff';
+        wrapperClonado.appendChild(clone);
+        document.body.appendChild(wrapperClonado);
+
+        const agendarMedicao = typeof requestAnimationFrame === 'function'
+          ? (callback) => requestAnimationFrame(callback)
+          : (callback) => setTimeout(callback, 0);
+        await new Promise(resolve => agendarMedicao(resolve));
+
+        const bounds = clone.getBoundingClientRect();
+        const largura = Math.max(bounds.width, clone.scrollWidth, clone.offsetWidth);
+        const altura = Math.max(bounds.height, clone.scrollHeight, clone.offsetHeight);
+        const escala = Math.max(window.devicePixelRatio || 1, 2);
+
+        const canvas = await html2canvas(clone, {
+          backgroundColor: '#ffffff',
+          scale: escala,
+          width: Math.max(1, Math.round(largura)),
+          height: Math.max(1, Math.round(altura)),
+          windowWidth: Math.max(1, Math.round(largura)),
+          windowHeight: Math.max(1, Math.round(altura)),
+          scrollX: 0,
+          scrollY: 0,
+          useCORS: true,
+        });
         const img = document.createElement('img');
         img.id = 'reciboVendaImg';
         img.src = canvas.toDataURL('image/png');
@@ -661,6 +767,10 @@ if (!isset($_SESSION['usuario'])) {
         reciboHtmlEl.replaceWith(img);
       } catch (erro) {
         console.error('Falha ao gerar imagem do recibo', erro);
+      } finally {
+        if (wrapperClonado?.parentNode) {
+          wrapperClonado.parentNode.removeChild(wrapperClonado);
+        }
       }
     }
 
