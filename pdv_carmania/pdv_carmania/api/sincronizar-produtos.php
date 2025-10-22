@@ -235,19 +235,21 @@ try {
     $removidosInativos = 0;
 
     foreach ($idsLocais as $idLocal => $_) {
-        if (!isset($idsRemotos[$idLocal])) {
-            if (removerProdutoLocal($db, $idLocal, $colunaEstoque)) {
+        $idLocalStr = (string) $idLocal;
+        if (!isset($idsRemotos[$idLocalStr])) {
+            if (removerProdutoLocal($db, $idLocalStr, $colunaEstoque)) {
                 $removidosAusentes++;
             }
         }
     }
 
     foreach ($idsInativos as $idInativo => $_) {
-        if (!isset($idsLocais[$idInativo])) {
+        $idInativoStr = (string) $idInativo;
+        if (!isset($idsLocais[$idInativoStr])) {
             continue;
         }
 
-        if (removerProdutoLocal($db, $idInativo, $colunaEstoque)) {
+        if (removerProdutoLocal($db, $idInativoStr, $colunaEstoque)) {
             $removidosInativos++;
         }
     }
