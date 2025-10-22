@@ -125,11 +125,16 @@ if ($usuarioLogado && file_exists($dbFile)) {
         <h2 class="mb-1">Produtos</h2>
         <p class="text-muted mb-0">Consulte estoque por depósito ou de forma geral e mantenha os cadastros sincronizados.</p>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <label for="selectDeposito" class="fw-semibold text-muted mb-0">Depósito:</label>
-        <select id="selectDeposito" class="form-select">
-          <option value="geral">Todos os depósitos</option>
-        </select>
+      <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <label for="selectDeposito" class="fw-semibold text-muted mb-0">Depósito:</label>
+          <select id="selectDeposito" class="form-select">
+            <option value="geral">Todos os depósitos</option>
+          </select>
+        </div>
+        <button id="btnSincronizarProdutos" type="button" class="btn btn-danger fw-semibold">
+          SINCRONIZAR PRODUTOS
+        </button>
       </div>
     </div>
 
@@ -167,6 +172,7 @@ if ($usuarioLogado && file_exists($dbFile)) {
     const tabelaProdutos = document.getElementById('tabelaProdutos');
     const selectDeposito = document.getElementById('selectDeposito');
     const alertasEl = document.getElementById('alertas');
+    const btnSincronizar = document.getElementById('btnSincronizarProdutos');
 
     let produtos = [];
     let estoqueAtual = {};
@@ -426,6 +432,55 @@ if ($usuarioLogado && file_exists($dbFile)) {
         excluirProduto(idProduto, botao);
       }
     });
+
+    async function sincronizarProdutos() {
+      if (!btnSincronizar) {
+        return;
+      }
+
+      if (!confirm('Deseja iniciar a sincronização completa dos produtos?')) {
+        return;
+      }
+
+      limparAlerta();
+
+      const textoOriginal = btnSincronizar.innerHTML;
+      btnSincronizar.disabled = true;
+      btnSincronizar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sincronizando...';
+
+      try {
+        const resposta = await fetch('../api/sincronizar-produtos.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const json = await resposta.json().catch(() => null);
+
+        if (!resposta.ok || !json || json.ok === false) {
+          const mensagemErro = (json && (json.erro || json.mensagem)) || 'Falha ao sincronizar os produtos.';
+          throw new Error(mensagemErro);
+        }
+
+        const detalhes = json.resumo || json.mensagem || 'Sincronização concluída.';
+        mostrarAlerta('success', escapeHtml(detalhes));
+
+        await carregarProdutos();
+        await carregarEstoqueDeposito();
+        renderizarTabela();
+      } catch (erro) {
+        console.error('Erro ao sincronizar produtos:', erro);
+        mostrarAlerta('danger', erro.message || 'Não foi possível concluir a sincronização.');
+      } finally {
+        btnSincronizar.disabled = false;
+        btnSincronizar.innerHTML = textoOriginal;
+      }
+    }
+
+    if (btnSincronizar) {
+      btnSincronizar.addEventListener('click', sincronizarProdutos);
+    }
 
     inicializar();
   </script>
