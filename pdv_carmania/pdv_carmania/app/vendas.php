@@ -137,6 +137,14 @@ if (!isset($_SESSION['usuario'])) {
     #reciboContainer .recibo-acoes .btn {
       min-width: 140px;
     }
+    #reciboContainer .recibo-imagem {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 8px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+      background: #ffffff;
+    }
     @media (max-width: 576px) {
       .resumo-card {
         padding: 1.25rem;
@@ -310,6 +318,7 @@ if (!isset($_SESSION['usuario'])) {
   <div id="reciboContainer"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script>
     const tabelaCorpo = document.getElementById('tabelaVendasCorpo');
     const semResultados = document.getElementById('semResultados');
@@ -605,7 +614,7 @@ if (!isset($_SESSION['usuario'])) {
         if (!json.ok || !json.reciboHtml) {
           throw new Error(json.erro || 'Não foi possível gerar o recibo.');
         }
-        exibirRecibo(json.reciboHtml);
+        await exibirRecibo(json.reciboHtml);
       } catch (erro) {
         console.error(erro);
         exibirMensagem('danger', erro.message || 'Falha ao gerar o recibo.');
@@ -618,20 +627,48 @@ if (!isset($_SESSION['usuario'])) {
       }
     }
 
-    function exibirRecibo(html) {
+    async function exibirRecibo(html) {
       reciboContainer.innerHTML = `
-        <div class="recibo-wrapper">
-          <div class="recibo-conteudo">${html}</div>
-          <div class="recibo-acoes">
+        <div class="recibo-wrapper text-center">
+          <div class="recibo-conteudo">
+            <div class="d-flex justify-content-center align-items-center flex-column py-4" id="reciboLoading">
+              <div class="spinner-border text-danger" role="status"></div>
+              <p class="mt-3 mb-0 text-muted">Gerando imagem do recibo...</p>
+            </div>
+          </div>
+          <div class="recibo-acoes d-none" id="reciboAcoes">
             <button type="button" class="btn btn-primary" id="btnImprimirRecibo">🖨 Imprimir</button>
+            <button type="button" class="btn btn-success" id="btnCompartilharRecibo">🔗 Compartilhar</button>
             <button type="button" class="btn btn-secondary" id="btnCopiarRecibo">📋 Copiar</button>
             <button type="button" class="btn btn-outline-dark" id="btnFecharRecibo">Fechar</button>
           </div>
         </div>`;
       reciboContainer.dataset.htmlRecibo = html;
+      delete reciboContainer.dataset.imagemRecibo;
       reciboContainer.classList.add('ativo');
+
+      try {
+        const imagem = await gerarImagemRecibo(html);
+        reciboContainer.dataset.imagemRecibo = imagem;
+        const conteudo = reciboContainer.querySelector('.recibo-conteudo');
+        if (conteudo) {
+          conteudo.innerHTML = `<img src="${imagem}" alt="Recibo da venda" class="recibo-imagem" />`;
+        }
+        const acoes = document.getElementById('reciboAcoes');
+        if (acoes) {
+          acoes.classList.remove('d-none');
+        }
+      } catch (erro) {
+        console.error('Falha ao gerar imagem do recibo:', erro);
+        const conteudo = reciboContainer.querySelector('.recibo-conteudo');
+        if (conteudo) {
+          conteudo.innerHTML = '<div class="alert alert-danger" role="alert">Não foi possível gerar a imagem do recibo.</div>';
+        }
+      }
+
       document.getElementById('btnImprimirRecibo')?.addEventListener('click', imprimirReciboAtual);
       document.getElementById('btnCopiarRecibo')?.addEventListener('click', copiarReciboAtual);
+      document.getElementById('btnCompartilharRecibo')?.addEventListener('click', compartilharReciboAtual);
       document.getElementById('btnFecharRecibo')?.addEventListener('click', fecharRecibo);
     }
 
@@ -639,11 +676,12 @@ if (!isset($_SESSION['usuario'])) {
       reciboContainer.classList.remove('ativo');
       reciboContainer.innerHTML = '';
       delete reciboContainer.dataset.htmlRecibo;
+      delete reciboContainer.dataset.imagemRecibo;
     }
 
     function imprimirReciboAtual() {
-      const html = reciboContainer.dataset.htmlRecibo || '';
-      if (!html) {
+      const imagem = reciboContainer.dataset.imagemRecibo || '';
+      if (!imagem) {
         alert('Recibo não disponível no momento.');
         return;
       }
@@ -652,22 +690,26 @@ if (!isset($_SESSION['usuario'])) {
         alert('Não foi possível abrir a janela de impressão.');
         return;
       }
-      popup.document.write('<html><head><title>Recibo PDV Carmania</title></head><body>' + html + '</body></html>');
+      popup.document.write('<html><head><title>Recibo PDV Carmania</title></head><body style="margin:0;display:flex;justify-content:center;align-items:center;background:#f8f9fa;"><img src="' + imagem + '" alt="Recibo" style="max-width:90%;height:auto;" /></body></html>');
       popup.document.close();
       popup.focus();
       popup.print();
     }
 
     async function copiarReciboAtual() {
-      const html = reciboContainer.dataset.htmlRecibo || '';
-      if (!html) {
+      const imagem = reciboContainer.dataset.imagemRecibo || '';
+      if (!imagem) {
         alert('Recibo não disponível no momento.');
         return;
       }
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(html);
-          alert('Recibo copiado!');
+        const blob = await (await fetch(imagem)).blob();
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          alert('Imagem do recibo copiada!');
+        } else if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(imagem);
+          alert('Link da imagem copiado!');
         } else {
           throw new Error('Clipboard API não suportada.');
         }
@@ -675,6 +717,59 @@ if (!isset($_SESSION['usuario'])) {
         console.error(erro);
         alert('Não foi possível copiar o recibo automaticamente.');
       }
+    }
+
+    async function compartilharReciboAtual() {
+      const imagem = reciboContainer.dataset.imagemRecibo || '';
+      if (!imagem) {
+        alert('Recibo não disponível no momento.');
+        return;
+      }
+      if (!navigator.share || typeof File === 'undefined') {
+        alert('Compartilhamento não suportado neste dispositivo.');
+        return;
+      }
+      try {
+        const blob = await (await fetch(imagem)).blob();
+        const arquivo = new File([blob], `recibo-${Date.now()}.png`, { type: 'image/png' });
+        if (navigator.canShare && !navigator.canShare({ files: [arquivo] })) {
+          throw new Error('Compartilhamento não suportado para arquivos.');
+        }
+        await navigator.share({
+          files: [arquivo],
+          title: 'Recibo PDV Carmania',
+          text: 'Confira o recibo da venda.',
+        });
+      } catch (erro) {
+        console.error(erro);
+        alert('Não foi possível compartilhar o recibo.');
+      }
+    }
+
+    async function gerarImagemRecibo(html) {
+      if (!window.html2canvas) {
+        throw new Error('Biblioteca html2canvas não carregada.');
+      }
+      const containerTemp = document.createElement('div');
+      containerTemp.style.position = 'fixed';
+      containerTemp.style.pointerEvents = 'none';
+      containerTemp.style.opacity = '0';
+      containerTemp.style.left = '-9999px';
+      containerTemp.style.top = '0';
+      containerTemp.style.background = '#ffffff';
+      containerTemp.style.padding = '16px';
+      containerTemp.style.border = '1px solid transparent';
+      containerTemp.className = 'recibo-temp-capture';
+      containerTemp.innerHTML = html;
+      document.body.appendChild(containerTemp);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const canvas = await html2canvas(containerTemp, {
+        backgroundColor: '#ffffff',
+        scale: window.devicePixelRatio > 1 ? window.devicePixelRatio : 2,
+        useCORS: true,
+      });
+      document.body.removeChild(containerTemp);
+      return canvas.toDataURL('image/png');
     }
 
     function inicializarPaginaVendas() {
