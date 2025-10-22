@@ -447,6 +447,7 @@ do {
         }
         $insertStmt->bindValue(':gtin', null, SQLITE3_NULL);
         $insertStmt->execute();
+        $inseriuNovo = $db->changes() > 0;
 
         $updateStmt = $db->prepare(
             'UPDATE produtos
@@ -480,35 +481,37 @@ do {
 
         salvarProgresso($progressFile, $id);
 
-        [$detalheStatus, $detalheResposta] = buscarDetalheProduto($id);
-        if ($detalheStatus === 200) {
-            $detalhes = json_decode($detalheResposta, true);
-            if ($detalhes === null && json_last_error() !== JSON_ERROR_NONE) {
-                logAtualizacao("❌ Falha ao interpretar detalhes do produto {$id}: " . json_last_error_msg(), 'error');
-                $totalDetalhesFalhos++;
-                continue;
-            }
-            $dadosProduto = $detalhes['data'] ?? null;
-            if (is_array($dadosProduto)) {
-                $gtin = extrairGtinProduto($dadosProduto);
+        if ($inseriuNovo) {
+            [$detalheStatus, $detalheResposta] = buscarDetalheProduto($id);
+            if ($detalheStatus === 200) {
+                $detalhes = json_decode($detalheResposta, true);
+                if ($detalhes === null && json_last_error() !== JSON_ERROR_NONE) {
+                    logAtualizacao("❌ Falha ao interpretar detalhes do produto {$id}: " . json_last_error_msg(), 'error');
+                    $totalDetalhesFalhos++;
+                    continue;
+                }
+                $dadosProduto = $detalhes['data'] ?? null;
+                if (is_array($dadosProduto)) {
+                    $gtin = extrairGtinProduto($dadosProduto);
 
-                if ($gtin) {
-                    $update = $db->prepare('UPDATE produtos SET gtin = :gtin WHERE id = :id');
-                    $update->bindValue(':gtin', $gtin);
-                    $update->bindValue(':id', $id);
-                    $update->execute();
-                    $totalGtinsAtualizados++;
-                    logAtualizacao("✅ GTIN atualizado para o produto {$id}.", 'success');
+                    if ($gtin) {
+                        $update = $db->prepare('UPDATE produtos SET gtin = :gtin WHERE id = :id');
+                        $update->bindValue(':gtin', $gtin);
+                        $update->bindValue(':id', $id);
+                        $update->execute();
+                        $totalGtinsAtualizados++;
+                        logAtualizacao("✅ GTIN atualizado para o produto {$id}.", 'success');
+                    } else {
+                        logAtualizacao("ℹ️ Produto {$id} sem GTIN informado no Bling.", 'info');
+                    }
                 } else {
-                    logAtualizacao("ℹ️ Produto {$id} sem GTIN informado no Bling.", 'info');
+                    logAtualizacao("⚠️ Resposta inesperada ao obter detalhes do produto {$id}.", 'warn');
+                    $totalDetalhesFalhos++;
                 }
             } else {
-                logAtualizacao("⚠️ Resposta inesperada ao obter detalhes do produto {$id}.", 'warn');
+                logAtualizacao("⚠️ Não foi possível obter detalhes do produto {$id}. HTTP {$detalheStatus}", 'warn');
                 $totalDetalhesFalhos++;
             }
-        } else {
-            logAtualizacao("⚠️ Não foi possível obter detalhes do produto {$id}. HTTP {$detalheStatus}", 'warn');
-            $totalDetalhesFalhos++;
         }
     }
 
