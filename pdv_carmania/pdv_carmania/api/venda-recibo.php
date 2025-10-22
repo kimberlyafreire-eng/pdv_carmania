@@ -34,6 +34,38 @@ function logRecibo(string $mensagem): void
     file_put_contents($logFile, $linha, FILE_APPEND);
 }
 
+function normalizarDataHoraVenda($data, $hora = null): ?string
+{
+    if ($data === null) {
+        return null;
+    }
+
+    $data = trim((string) $data);
+    if ($data === '') {
+        return null;
+    }
+
+    if ($hora !== null) {
+        $hora = trim((string) $hora);
+        if ($hora !== '' && preg_match('/^\d{2}:\d{2}(?::\d{2})?$/', $hora)) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $data)) {
+                $data .= ' ' . $hora;
+            } elseif (!preg_match('/\d{2}:\d{2}/', $data)) {
+                $data .= ' ' . $hora;
+            }
+        }
+    }
+
+    $data = str_replace('T', ' ', $data);
+
+    try {
+        $dt = new DateTime($data);
+        return $dt->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
 function bling_request(string $method, string $path, $body = null): array
 {
     global $blingBase;
@@ -150,6 +182,7 @@ try {
     $saldoCrediarioAnteriorDb = null;
     $saldoCrediarioNovoDb = null;
     $valorCrediarioVendaDb = null;
+    $dataHoraVendaRecibo = null;
     $db = null;
 
     try {
@@ -160,12 +193,15 @@ try {
 
     if ($db instanceof SQLite3) {
         try {
-            $stmtVenda = $db->prepare('SELECT usuario_nome, usuario_login, deposito_nome, saldo_crediario_anterior, saldo_crediario_novo, valor_crediario_venda FROM vendas WHERE id = :id LIMIT 1');
+            $stmtVenda = $db->prepare('SELECT data_hora, usuario_nome, usuario_login, deposito_nome, saldo_crediario_anterior, saldo_crediario_novo, valor_crediario_venda FROM vendas WHERE id = :id LIMIT 1');
             $stmtVenda->bindValue(':id', $pedidoId, SQLITE3_INTEGER);
             $resVenda = $stmtVenda->execute();
             if ($resVenda) {
                 $row = $resVenda->fetchArray(SQLITE3_ASSOC);
                 if ($row) {
+                    if (!empty($row['data_hora'])) {
+                        $dataHoraVendaRecibo = normalizarDataHoraVenda($row['data_hora']);
+                    }
                     $atendente = trim((string) ($row['usuario_nome'] ?? ''));
                     if ($atendente === '') {
                         $atendente = trim((string) ($row['usuario_login'] ?? ''));
@@ -285,6 +321,35 @@ try {
         $totalFinal = max(0.0, $totalBruto - $descontoAplicado);
     }
 
+    if ($dataHoraVendaRecibo === null) {
+        $horasPossiveis = [];
+        foreach (['horaSaida', 'horaPrevista', 'hora'] as $campoHora) {
+            if (!empty($pedido[$campoHora])) {
+                $horasPossiveis[] = (string) $pedido[$campoHora];
+            }
+        }
+        $horasPossiveis[] = null;
+
+        $camposData = ['dataSaida', 'data', 'dataEmissao', 'dataPrevista', 'dataCriacao', 'dataOperacao', 'createdAt', 'updatedAt'];
+        foreach ($camposData as $campoData) {
+            if (!isset($pedido[$campoData])) {
+                continue;
+            }
+            $valorData = $pedido[$campoData];
+            foreach ($horasPossiveis as $horaPossivel) {
+                $normalizado = normalizarDataHoraVenda($valorData, $horaPossivel);
+                if ($normalizado !== null) {
+                    $dataHoraVendaRecibo = $normalizado;
+                    break 2;
+                }
+            }
+        }
+
+        if ($dataHoraVendaRecibo === null && isset($pedido['situacao']['data'])) {
+            $dataHoraVendaRecibo = normalizarDataHoraVenda($pedido['situacao']['data']);
+        }
+    }
+
     [$temCrediarioFormas, $valorCrediarioDetectado] = analisarPagamentosCrediario($formasRecibo);
     $valorCrediarioVenda = $valorCrediarioVendaDb;
     if ($valorCrediarioVenda === null || $valorCrediarioVenda <= 0) {
@@ -367,7 +432,7 @@ try {
         logRecibo('💳 Resumo crediário histórico -> anterior exibido: ' . $saldoAnteriorExibido . ' | valor venda: ' . $valorCrediarioVenda . ' | saldo armazenado novo: ' . ($saldoCrediarioNovoDb !== null ? (string) $saldoCrediarioNovoDb : 'n/d') . ' | saldo consultado atual: ' . ($saldoConsultaAtual !== null ? (string) $saldoConsultaAtual : 'n/d') . ' | novo exibido: ' . $saldoNovoExibido);
     }
 
-    $reciboHtml = gerarReciboHtml([
+    $dadosRecibo = [
         'pedidoId' => $pedidoId,
         'clienteNome' => $clienteNome,
         'atendente' => $atendente,
@@ -378,7 +443,13 @@ try {
         'itens' => $itensRecibo,
         'formas' => $formasRecibo,
         'resumoCrediarioHtml' => $resumoCrediarioHtml,
-    ]);
+    ];
+
+    if ($dataHoraVendaRecibo !== null) {
+        $dadosRecibo['dataHoraVenda'] = $dataHoraVendaRecibo;
+    }
+
+    $reciboHtml = gerarReciboHtml($dadosRecibo);
 
     echo json_encode([
         'ok' => true,
