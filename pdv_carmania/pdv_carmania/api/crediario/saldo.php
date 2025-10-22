@@ -56,6 +56,7 @@ $titulos = [];
 $page = 1;
 $limit = 100;
 $totalSaldo = 0.0;
+$borderoCache = [];
 
 do {
     $url = "$blingBase/contas/receber?pagina=$page&limite=$limit";
@@ -92,6 +93,9 @@ do {
 
             $saldo = $valorTitulo;
             $detalhe = [];
+            $borderoIds = [];
+            $recebimentosTitulo = [];
+            $totalRecebidoTitulo = 0.0;
             if ($http2 == 200) {
                 $detalhe = json_decode($resp2, true)['data'] ?? [];
                 if (isset($detalhe['saldo'])) {
@@ -123,8 +127,83 @@ do {
                         $origemUrl = $origemDetalhe['url'];
                     }
                 }
+                if (isset($detalhe['borderos']) && is_array($detalhe['borderos'])) {
+                    $borderoIds = $detalhe['borderos'];
+                }
             } else {
                 logMsg("⚠ Falha ao obter detalhes do título $idConta: HTTP $http2");
+            }
+
+            if (empty($borderoIds) && isset($t['borderos']) && is_array($t['borderos'])) {
+                $borderoIds = $t['borderos'];
+            }
+
+            if (!empty($borderoIds)) {
+                foreach ($borderoIds as $borderoIdRaw) {
+                    $borderoId = is_numeric($borderoIdRaw) ? (int) $borderoIdRaw : 0;
+                    if ($borderoId <= 0) {
+                        continue;
+                    }
+
+                    if (array_key_exists($borderoId, $borderoCache)) {
+                        $borderoData = $borderoCache[$borderoId];
+                    } else {
+                        $urlBordero = "$blingBase/borderos/$borderoId";
+                        list($httpBordero, $respBordero) = callBling($urlBordero, $access_token);
+                        if ($httpBordero == 200) {
+                            $borderoData = json_decode($respBordero, true)['data'] ?? null;
+                        } else {
+                            logMsg("⚠ Falha ao obter borderô $borderoId: HTTP $httpBordero");
+                            $borderoData = null;
+                        }
+                        $borderoCache[$borderoId] = $borderoData;
+                    }
+
+                    if (!$borderoData || !is_array($borderoData)) {
+                        continue;
+                    }
+
+                    $pagamentosBordero = [];
+                    $totalBordero = 0.0;
+                    if (isset($borderoData['pagamentos']) && is_array($borderoData['pagamentos'])) {
+                        foreach ($borderoData['pagamentos'] as $pg) {
+                            if (!is_array($pg)) {
+                                continue;
+                            }
+                            $valorPago = isset($pg['valorPago']) ? floatval($pg['valorPago']) : 0.0;
+                            $juros = isset($pg['juros']) ? floatval($pg['juros']) : 0.0;
+                            $desconto = isset($pg['desconto']) ? floatval($pg['desconto']) : 0.0;
+                            $acrescimo = isset($pg['acrescimo']) ? floatval($pg['acrescimo']) : 0.0;
+                            $tarifa = isset($pg['tarifa']) ? floatval($pg['tarifa']) : 0.0;
+                            $valorAplicado = $valorPago + $juros + $acrescimo - $desconto - $tarifa;
+                            $totalBordero += $valorAplicado;
+                            $pagamentosBordero[] = [
+                                'contatoId' => isset($pg['contato']['id']) ? (string) $pg['contato']['id'] : null,
+                                'numeroDocumento' => isset($pg['numeroDocumento']) ? $pg['numeroDocumento'] : null,
+                                'valorPago' => round($valorPago, 2),
+                                'juros' => round($juros, 2),
+                                'desconto' => round($desconto, 2),
+                                'acrescimo' => round($acrescimo, 2),
+                                'tarifa' => round($tarifa, 2),
+                                'valorAplicado' => round($valorAplicado, 2),
+                            ];
+                        }
+                    }
+
+                    if (!empty($pagamentosBordero)) {
+                        $totalRecebidoTitulo += $totalBordero;
+                    }
+
+                    $recebimentosTitulo[] = [
+                        'id' => $borderoData['id'] ?? $borderoId,
+                        'data' => $borderoData['data'] ?? null,
+                        'historico' => $borderoData['historico'] ?? null,
+                        'portadorId' => isset($borderoData['portador']['id']) ? (string) $borderoData['portador']['id'] : null,
+                        'categoriaId' => isset($borderoData['categoria']['id']) ? (string) $borderoData['categoria']['id'] : null,
+                        'pagamentos' => $pagamentosBordero,
+                        'totalRecebido' => round($totalBordero, 2),
+                    ];
+                }
             }
 
             if ($saldo <= 0 && $situacao == 1) {
@@ -173,6 +252,8 @@ do {
                     'vencimento' => $t['vencimento'] ?? null,
                     'valor' => $valorTitulo,
                     'restante' => $saldo,
+                    'totalRecebido' => round($totalRecebidoTitulo, 2),
+                    'recebimentos' => $recebimentosTitulo,
                     'documento' => $documento,
                     'dataEmissao' => $dataEmissao,
                     'origemId' => $origemId !== null ? (string) $origemId : null,
