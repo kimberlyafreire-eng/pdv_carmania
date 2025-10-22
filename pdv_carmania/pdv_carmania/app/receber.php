@@ -19,6 +19,15 @@ if (!isset($_SESSION['usuario'])) {
     .list-group-item small { color: #666; }
     .autocomplete-list button { text-align:left; }
     .main-content { max-width: 960px; margin: 0 auto; }
+    .list-group-item-action { cursor: pointer; }
+    .list-group-item-action .badge { font-size: 0.75rem; }
+    .titulo-origem { color: #888; }
+    .recibo-mini { background: #fff; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); padding: 16px; }
+    .relacao-card { border-radius: 12px; }
+    .relacao-conteudo h5 { font-size: 1.05rem; }
+    .relacao-conteudo table { width: 100%; }
+    .relacao-conteudo thead th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .relacao-conteudo tbody td, .relacao-conteudo tfoot th { font-size: 0.95rem; }
 
     @media (max-width: 576px) {
       .card-saldo { padding: 20px; border-radius: 10px; }
@@ -75,10 +84,83 @@ if (!isset($_SESSION['usuario'])) {
     </div>
   </div>
 
+  <div class="modal fade" id="detalheTituloModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Detalhes do crediário</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div id="detalheTituloInfo"></div>
+          <div id="detalheTituloRecibo" class="mt-3"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script>
     let clientesLista = [];
     let clienteSelecionado = null;
+    let titulosCliente = [];
+    let relacaoImagemDataUrl = null;
+    let relacaoGeradaEm = '';
+    const situacaoLabels = {
+      1: 'Em aberto',
+      2: 'Liquidado',
+      3: 'Parcial',
+      4: 'Cancelado',
+      5: 'Em atraso'
+    };
+
+    function formatCurrency(value) {
+      const numero = typeof value === 'number' ? value : parseFloat(value);
+      if (!Number.isFinite(numero)) {
+        return 'R$ 0,00';
+      }
+      return numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString('pt-BR');
+      }
+      if (typeof value === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          const [ano, mes, dia] = value.split('-');
+          return `${dia}/${mes}/${ano}`;
+        }
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+          return value;
+        }
+      }
+      return value;
+    }
+
+    function formatDateTime(value) {
+      if (!value) return '-';
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleString('pt-BR');
+      }
+      return value;
+    }
+
+    function textoSeguro(valor) {
+      return (typeof valor === 'string' && valor.trim()) ? valor.trim() : '';
+    }
+
+    function labelSituacao(codigo) {
+      const chave = Number(codigo);
+      return situacaoLabels[chave] || `Situação ${chave}`;
+    }
 
     function sanitizarClientes(listaBruta) {
       if (!Array.isArray(listaBruta)) {
@@ -220,10 +302,16 @@ if (!isset($_SESSION['usuario'])) {
 
     // Buscar saldo
     document.getElementById("btnBuscarSaldo").addEventListener("click", async () => {
-      if (!clienteSelecionado?.id) return alert("Selecione um cliente válido.");
+      if (!clienteSelecionado?.id) {
+        alert("Selecione um cliente válido.");
+        return;
+      }
 
       const resultDiv = document.getElementById("resultadoSaldo");
       resultDiv.innerHTML = "<div class='alert alert-info'>Consultando saldo...</div>";
+      titulosCliente = [];
+      relacaoImagemDataUrl = null;
+      relacaoGeradaEm = '';
 
       try {
         const res = await fetch("../api/crediario/saldo.php", {
@@ -238,34 +326,86 @@ if (!isset($_SESSION['usuario'])) {
           return;
         }
 
-        if (!data.titulos?.length) {
+        const titulosRecebidos = Array.isArray(data.titulos) ? data.titulos : [];
+        if (!titulosRecebidos.length) {
           resultDiv.innerHTML = `
             <div class="card-saldo text-center">
               <h5>${clienteSelecionado.nome}</h5>
               <p class="text-success mt-2 mb-1">Nenhum débito em aberto no crediário.</p>
             </div>`;
+          localStorage.setItem("clienteRecebimento", JSON.stringify(clienteSelecionado));
+          localStorage.setItem("saldoCrediario", JSON.stringify(data));
           return;
         }
 
-        // Montar lista de títulos
-        let titulosHtml = data.titulos.map(t => `
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <div>
-              <b>#${t.id}</b><br>
-              <small>Vencimento: ${t.vencimento}</small>
-            </div>
-            <span class="fw-bold">R$ ${t.restante.toFixed(2)}</span>
-          </li>`).join("");
+        titulosCliente = titulosRecebidos.map((titulo) => {
+          const copia = { ...titulo };
+          const restanteNumero = Number.parseFloat(titulo.restante ?? titulo.valor ?? 0);
+          const valorNumero = Number.parseFloat(titulo.valor ?? titulo.restante ?? 0);
+          copia.restante = Number.isFinite(restanteNumero) ? restanteNumero : 0;
+          copia.valor = Number.isFinite(valorNumero) ? valorNumero : copia.restante;
+          copia.saldoVendaAnterior = (titulo.saldoVendaAnterior ?? titulo.saldoVendaAnterior === 0)
+            ? Number.parseFloat(titulo.saldoVendaAnterior)
+            : null;
+          copia.saldoVendaNovo = (titulo.saldoVendaNovo ?? titulo.saldoVendaNovo === 0)
+            ? Number.parseFloat(titulo.saldoVendaNovo)
+            : null;
+          copia.valorCrediarioVenda = (titulo.valorCrediarioVenda ?? titulo.valorCrediarioVenda === 0)
+            ? Number.parseFloat(titulo.valorCrediarioVenda)
+            : null;
+          return copia;
+        });
+
+        const titulosHtml = titulosCliente.map((t, idx) => {
+          const doc = textoSeguro(t.documento);
+          const partesOrigem = [];
+          const tipoOrigem = textoSeguro(t.origemTipo);
+          if (tipoOrigem) {
+            partesOrigem.push(tipoOrigem.replace(/_/g, ' ').replace(/\b\w/g, (letra) => letra.toUpperCase()));
+          }
+          const numeroOrigem = textoSeguro(t.origemNumero);
+          if (numeroOrigem) {
+            partesOrigem.push(`#${numeroOrigem}`);
+          } else {
+            const origemId = textoSeguro(t.origemId);
+            if (origemId) {
+              partesOrigem.push(`#${origemId}`);
+            }
+          }
+          const origemTexto = partesOrigem.length ? partesOrigem.join(' • ') : 'Origem não informada';
+
+          return `
+            <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-start" onclick="mostrarDetalheTitulo(${idx})">
+              <div>
+                <div class="fw-bold">#${t.id} • ${formatCurrency(t.restante)}</div>
+                <small>Vencimento: ${formatDate(t.vencimento)}${doc ? ` • Doc: ${doc}` : ''}</small><br>
+                <small class="titulo-origem">${origemTexto}</small>
+              </div>
+              <span class="badge bg-danger-subtle text-danger">Ver</span>
+            </li>`;
+        }).join("");
 
         resultDiv.innerHTML = `
           <div class="card-saldo">
             <h5 class="text-danger">${clienteSelecionado.nome}</h5>
-            <p class="saldo-valor mb-3">Saldo atual: R$ ${data.saldoAtual.toFixed(2)}</p>
+            <p class="saldo-valor mb-3">Saldo atual: ${formatCurrency(Number.parseFloat(data.saldoAtual ?? 0))}</p>
             <ul class="list-group mb-3">${titulosHtml}</ul>
-            <button class="btn btn-success w-100 btn-lg" onclick="pagarDebito()">💳 Pagar Débito</button>
+            <div class="d-grid gap-2">
+              <button class="btn btn-success btn-lg" onclick="pagarDebito()">💳 Pagar Débito</button>
+              <button class="btn btn-outline-secondary btn-lg" onclick="gerarRelacaoTitulos()">📄 Relação do saldo</button>
+            </div>
+            <div id="relacaoCrediarioWrapper" class="mt-4" style="display:none;">
+              <div class="card border-0 shadow-sm relacao-card">
+                <div class="card-body relacao-conteudo">
+                  <div id="relacaoParaImagem"></div>
+                  <div class="d-grid gap-2 mt-3">
+                    <button id="btnCompartilharRelacao" class="btn btn-success" onclick="compartilharRelacao()" disabled>📤 Compartilhar</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>`;
 
-        // Guardar dados localmente
         localStorage.setItem("clienteRecebimento", JSON.stringify(clienteSelecionado));
         localStorage.setItem("saldoCrediario", JSON.stringify(data));
 
@@ -275,9 +415,222 @@ if (!isset($_SESSION['usuario'])) {
       }
     });
 
+    function mostrarDetalheTitulo(index) {
+      const titulo = titulosCliente[index];
+      if (!titulo) {
+        return;
+      }
+
+      const modalEl = document.getElementById("detalheTituloModal");
+      const infoEl = document.getElementById("detalheTituloInfo");
+      const reciboEl = document.getElementById("detalheTituloRecibo");
+      if (!modalEl || !infoEl || !reciboEl) {
+        return;
+      }
+
+      const doc = textoSeguro(titulo.documento);
+      const partesOrigem = [];
+      const tipoOrigem = textoSeguro(titulo.origemTipo);
+      if (tipoOrigem) {
+        partesOrigem.push(tipoOrigem.replace(/_/g, ' ').replace(/\b\w/g, (letra) => letra.toUpperCase()));
+      }
+      const numeroOrigem = textoSeguro(titulo.origemNumero);
+      if (numeroOrigem) {
+        partesOrigem.push(`#${numeroOrigem}`);
+      } else {
+        const origemId = textoSeguro(titulo.origemId);
+        if (origemId) {
+          partesOrigem.push(`#${origemId}`);
+        }
+      }
+      const origemTexto = partesOrigem.length ? partesOrigem.join(' • ') : 'Origem não informada';
+      const linkDocumento = textoSeguro(titulo.origemUrl)
+        ? `<a href="${titulo.origemUrl}" target="_blank" rel="noopener">Abrir documento no Bling</a>`
+        : 'Documento não disponível';
+      const saldoAnteriorHtml = titulo.saldoVendaAnterior !== null && titulo.saldoVendaAnterior !== undefined
+        ? `<li>Saldo antes: <strong>${formatCurrency(titulo.saldoVendaAnterior)}</strong></li>`
+        : '';
+      const valorCrediarioHtml = titulo.valorCrediarioVenda !== null && titulo.valorCrediarioVenda !== undefined
+        ? `<li>Valor lançado: <strong>${formatCurrency(titulo.valorCrediarioVenda)}</strong></li>`
+        : '';
+      const saldoNovoHtml = titulo.saldoVendaNovo !== null && titulo.saldoVendaNovo !== undefined
+        ? `<li>Novo saldo: <strong>${formatCurrency(titulo.saldoVendaNovo)}</strong></li>`
+        : '';
+      const resumoSaldoVenda = (saldoAnteriorHtml || valorCrediarioHtml || saldoNovoHtml)
+        ? `<div class="alert alert-secondary mt-3 mb-0">
+             <h6 class="mb-2">Saldo registrado na venda</h6>
+             <ul class="list-unstyled mb-0 small">
+               ${saldoAnteriorHtml}${valorCrediarioHtml}${saldoNovoHtml}
+             </ul>
+           </div>`
+        : '';
+
+      infoEl.innerHTML = `
+        <div class="mb-3">
+          <h5 class="mb-1">Conta #${titulo.id}</h5>
+          <p class="mb-2"><span class="badge bg-danger-subtle text-danger">${labelSituacao(titulo.situacao)}</span></p>
+          <p class="mb-1"><strong>Vencimento:</strong> ${formatDate(titulo.vencimento)}</p>
+          <p class="mb-1"><strong>Saldo em aberto:</strong> ${formatCurrency(titulo.restante)}</p>
+          <p class="mb-1"><strong>Valor original:</strong> ${formatCurrency(titulo.valor)}</p>
+          <p class="mb-1"><strong>Data de emissão:</strong> ${formatDate(titulo.dataEmissao)}</p>
+          <p class="mb-1"><strong>Documento:</strong> ${doc || '-'}</p>
+          <p class="mb-1"><strong>Origem:</strong> ${origemTexto}</p>
+          <p class="mb-0"><strong>Detalhes:</strong> ${linkDocumento}</p>
+        </div>
+        ${resumoSaldoVenda}
+        ${titulo.vendaId ? `<div class="alert alert-light border mt-3 mb-0">
+            <h6 class="mb-1">Venda vinculada</h6>
+            <small>ID da venda: #${titulo.vendaId}</small>
+          </div>` : '<div class="alert alert-info mt-3 mb-0">Não foi possível localizar automaticamente a venda vinculada a este título.</div>'}
+      `;
+
+      reciboEl.innerHTML = '';
+
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      modal.show();
+
+      if (titulo.vendaId) {
+        carregarReciboTitulo(index);
+      }
+    }
+
+    async function carregarReciboTitulo(index, forceRefresh = false) {
+      const titulo = titulosCliente[index];
+      const reciboEl = document.getElementById("detalheTituloRecibo");
+      if (!titulo || !titulo.vendaId || !reciboEl) {
+        if (reciboEl && (!titulo || !titulo.vendaId)) {
+          reciboEl.innerHTML = '<div class="alert alert-info mt-3 mb-0">Venda não encontrada para exibir recibo.</div>';
+        }
+        return;
+      }
+
+      if (titulo.reciboHtml && !forceRefresh) {
+        reciboEl.innerHTML = `<div class="recibo-mini">${titulo.reciboHtml}</div>`;
+        return;
+      }
+
+      reciboEl.innerHTML = '<div class="text-center text-muted py-3">Carregando notinha da venda...</div>';
+
+      try {
+        const resposta = await fetch(`../api/venda-recibo.php?id=${encodeURIComponent(titulo.vendaId)}`, { cache: 'no-store' });
+        const dados = await resposta.json();
+        if (!resposta.ok || !dados.ok || !dados.reciboHtml) {
+          throw new Error(dados.erro || 'Falha ao carregar recibo');
+        }
+        titulo.reciboHtml = dados.reciboHtml;
+        reciboEl.innerHTML = `<div class="recibo-mini">${dados.reciboHtml}</div>`;
+      } catch (erro) {
+        console.error(erro);
+        reciboEl.innerHTML = '<div class="alert alert-danger">Não foi possível carregar a notinha da venda no momento.</div>';
+      }
+    }
+
+    function gerarRelacaoTitulos() {
+      if (!titulosCliente.length) {
+        alert('Nenhum título em aberto para gerar a relação.');
+        return;
+      }
+
+      const wrapper = document.getElementById('relacaoCrediarioWrapper');
+      const container = document.getElementById('relacaoParaImagem');
+      const botaoShare = document.getElementById('btnCompartilharRelacao');
+      if (!wrapper || !container || !botaoShare) {
+        return;
+      }
+
+      const agora = new Date();
+      relacaoGeradaEm = agora.toLocaleString('pt-BR');
+      const totalAberto = titulosCliente.reduce((acc, t) => acc + (Number.isFinite(Number(t.restante)) ? Number(t.restante) : 0), 0);
+
+      const linhas = titulosCliente.map((t) => `
+        <tr>
+          <td class="text-start">#${t.id}</td>
+          <td class="text-start">${formatDate(t.vencimento)}</td>
+          <td class="text-end">${formatCurrency(t.restante)}</td>
+        </tr>
+      `).join('');
+
+      container.innerHTML = `
+        <div class="text-center mb-3">
+          <h5 class="mb-1">Relação de crediário em aberto</h5>
+          <div class="small text-muted">${clienteSelecionado?.nome ? textoSeguro(clienteSelecionado.nome) : ''}</div>
+          <div class="small text-muted">Gerado em ${relacaoGeradaEm}</div>
+        </div>
+        <table class="table table-borderless table-sm mb-0">
+          <thead>
+            <tr>
+              <th class="text-start">Conta</th>
+              <th class="text-start">Vencimento</th>
+              <th class="text-end">Saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhas}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="2" class="text-start">Total em aberto</th>
+              <th class="text-end">${formatCurrency(totalAberto)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+
+      wrapper.style.display = 'block';
+      botaoShare.disabled = false;
+      relacaoImagemDataUrl = null;
+    }
+
+    async function compartilharRelacao() {
+      const botaoShare = document.getElementById('btnCompartilharRelacao');
+      const container = document.getElementById('relacaoParaImagem');
+      if (!botaoShare || !container) {
+        return;
+      }
+
+      if (typeof html2canvas !== 'function') {
+        alert('Biblioteca de captura não carregada. Recarregue a página e tente novamente.');
+        return;
+      }
+
+      botaoShare.disabled = true;
+
+      try {
+        if (!relacaoImagemDataUrl) {
+          const canvas = await html2canvas(container, { scale: 2, backgroundColor: '#ffffff' });
+          relacaoImagemDataUrl = canvas.toDataURL('image/png');
+        }
+
+        const resposta = await fetch(relacaoImagemDataUrl);
+        const blob = await resposta.blob();
+        const nomeArquivo = `relacao-crediario-${Date.now()}.png`;
+        const arquivo = new File([blob], nomeArquivo, { type: 'image/png' });
+
+        if (navigator.share) {
+          if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+            await navigator.share({ files: [arquivo], title: 'Relação de crediário' });
+          } else {
+            await navigator.share({ files: [arquivo], title: 'Relação de crediário' });
+          }
+        } else {
+          alert('Compartilhamento não suportado neste dispositivo.');
+        }
+      } catch (erro) {
+        console.error(erro);
+        alert('Não foi possível compartilhar a relação no momento.');
+      } finally {
+        botaoShare.disabled = false;
+      }
+    }
+
     function pagarDebito() {
       window.location.href = "pagamento-crediario.php";
     }
+
+    window.mostrarDetalheTitulo = mostrarDetalheTitulo;
+    window.gerarRelacaoTitulos = gerarRelacaoTitulos;
+    window.compartilharRelacao = compartilharRelacao;
+    window.pagarDebito = pagarDebito;
   </script>
 </body>
 </html>
