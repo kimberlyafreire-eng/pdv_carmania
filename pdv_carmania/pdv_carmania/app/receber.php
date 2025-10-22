@@ -344,6 +344,43 @@ if (!isset($_SESSION['usuario'])) {
           const valorNumero = Number.parseFloat(titulo.valor ?? titulo.restante ?? 0);
           copia.restante = Number.isFinite(restanteNumero) ? restanteNumero : 0;
           copia.valor = Number.isFinite(valorNumero) ? valorNumero : copia.restante;
+          const totalRecebidoNumero = Number.parseFloat(titulo.totalRecebido ?? 0);
+          copia.totalRecebido = Number.isFinite(totalRecebidoNumero) ? totalRecebidoNumero : 0;
+          if (Array.isArray(titulo.recebimentos)) {
+            copia.recebimentos = titulo.recebimentos.map((bordero) => {
+              const borderoCopia = { ...bordero };
+              const pagamentos = Array.isArray(bordero.pagamentos) ? bordero.pagamentos.map((pg) => {
+                const pagamentoCopia = { ...pg };
+                const valorPagoNumero = Number.parseFloat(pg.valorPago ?? 0);
+                const jurosNumero = Number.parseFloat(pg.juros ?? 0);
+                const descontoNumero = Number.parseFloat(pg.desconto ?? 0);
+                const acrescimoNumero = Number.parseFloat(pg.acrescimo ?? 0);
+                const tarifaNumero = Number.parseFloat(pg.tarifa ?? 0);
+                const valorAplicadoNumero = Number.parseFloat(pg.valorAplicado ?? (valorPagoNumero + jurosNumero + acrescimoNumero - descontoNumero - tarifaNumero));
+                pagamentoCopia.valorPago = Number.isFinite(valorPagoNumero) ? valorPagoNumero : 0;
+                pagamentoCopia.juros = Number.isFinite(jurosNumero) ? jurosNumero : 0;
+                pagamentoCopia.desconto = Number.isFinite(descontoNumero) ? descontoNumero : 0;
+                pagamentoCopia.acrescimo = Number.isFinite(acrescimoNumero) ? acrescimoNumero : 0;
+                pagamentoCopia.tarifa = Number.isFinite(tarifaNumero) ? tarifaNumero : 0;
+                pagamentoCopia.valorAplicado = Number.isFinite(valorAplicadoNumero) ? valorAplicadoNumero : pagamentoCopia.valorPago;
+                return pagamentoCopia;
+              }) : [];
+              borderoCopia.pagamentos = pagamentos;
+              const totalBordero = pagamentos.reduce((acc, pg) => acc + (Number.isFinite(Number(pg.valorAplicado)) ? Number(pg.valorAplicado) : 0), 0);
+              borderoCopia.totalRecebido = Number.isFinite(Number(bordero.totalRecebido))
+                ? Number(bordero.totalRecebido)
+                : totalBordero;
+              return borderoCopia;
+            });
+          } else {
+            copia.recebimentos = [];
+          }
+          if ((!Number.isFinite(copia.totalRecebido) || copia.totalRecebido === 0) && Array.isArray(copia.recebimentos)) {
+            const totalCalculado = copia.recebimentos.reduce((acc, bordero) => acc + (Number.isFinite(Number(bordero.totalRecebido)) ? Number(bordero.totalRecebido) : 0), 0);
+            if (Number.isFinite(totalCalculado) && totalCalculado > 0) {
+              copia.totalRecebido = totalCalculado;
+            }
+          }
           copia.saldoVendaAnterior = (titulo.saldoVendaAnterior ?? titulo.saldoVendaAnterior === 0)
             ? Number.parseFloat(titulo.saldoVendaAnterior)
             : null;
@@ -447,6 +484,7 @@ if (!isset($_SESSION['usuario'])) {
       const linkDocumento = textoSeguro(titulo.origemUrl)
         ? `<a href="${titulo.origemUrl}" target="_blank" rel="noopener">Abrir documento no Bling</a>`
         : 'Documento não disponível';
+      const totalRecebidoTitulo = Number.isFinite(Number(titulo.totalRecebido)) ? Number(titulo.totalRecebido) : 0;
       const saldoAnteriorHtml = titulo.saldoVendaAnterior !== null && titulo.saldoVendaAnterior !== undefined
         ? `<li>Saldo antes: <strong>${formatCurrency(titulo.saldoVendaAnterior)}</strong></li>`
         : '';
@@ -461,9 +499,37 @@ if (!isset($_SESSION['usuario'])) {
              <h6 class="mb-2">Saldo registrado na venda</h6>
              <ul class="list-unstyled mb-0 small">
                ${saldoAnteriorHtml}${valorCrediarioHtml}${saldoNovoHtml}
-             </ul>
-           </div>`
+           </ul>
+         </div>`
         : '';
+      const recebimentos = Array.isArray(titulo.recebimentos) ? titulo.recebimentos : [];
+      const recebimentosDetalhes = recebimentos.map((bordero) => {
+        const dataBordero = formatDate(bordero.data);
+        const historico = textoSeguro(bordero.historico);
+        const pagamentos = Array.isArray(bordero.pagamentos) ? bordero.pagamentos.map((pg) => {
+          const detalhesExtras = [];
+          if (Number(pg.juros)) detalhesExtras.push(`Juros ${formatCurrency(pg.juros)}`);
+          if (Number(pg.desconto)) detalhesExtras.push(`Desconto ${formatCurrency(pg.desconto)}`);
+          if (Number(pg.acrescimo)) detalhesExtras.push(`Acréscimo ${formatCurrency(pg.acrescimo)}`);
+          if (Number(pg.tarifa)) detalhesExtras.push(`Tarifa ${formatCurrency(pg.tarifa)}`);
+          const extrasTexto = detalhesExtras.length ? ` <span class="text-muted">(${detalhesExtras.join(' • ')})</span>` : '';
+          const docPg = textoSeguro(pg.numeroDocumento);
+          const docTexto = docPg ? ` • Doc: ${docPg}` : '';
+          return `<li>Valor baixado: <strong>${formatCurrency(pg.valorAplicado ?? pg.valorPago ?? 0)}</strong>${extrasTexto}${docTexto}</li>`;
+        }).join('') : '';
+        const corpoPagamentos = pagamentos ? `<ul class="small ps-3 mb-0">${pagamentos}</ul>` : '<div class="small text-muted">Pagamentos não informados.</div>';
+        return `<div class="mb-3">
+          <div class="small fw-semibold">Borderô #${textoSeguro(bordero.id) || bordero.id || '-'} • ${dataBordero}</div>
+          ${historico ? `<div class="small text-muted mb-1">${historico}</div>` : ''}
+          ${corpoPagamentos}
+        </div>`;
+      }).join('');
+      const blocoRecebimentos = recebimentosDetalhes
+        ? `<div class="mt-3">
+            <h6 class="mb-2">Recebimentos localizados</h6>
+            ${recebimentosDetalhes}
+          </div>`
+        : '<div class="alert alert-light border mt-3 mb-0">Nenhum recebimento localizado no Bling para este título.</div>';
 
       infoEl.innerHTML = `
         <div class="mb-3">
@@ -472,12 +538,14 @@ if (!isset($_SESSION['usuario'])) {
           <p class="mb-1"><strong>Vencimento:</strong> ${formatDate(titulo.vencimento)}</p>
           <p class="mb-1"><strong>Saldo em aberto:</strong> ${formatCurrency(titulo.restante)}</p>
           <p class="mb-1"><strong>Valor original:</strong> ${formatCurrency(titulo.valor)}</p>
+          <p class="mb-1"><strong>Total recebido:</strong> ${formatCurrency(totalRecebidoTitulo)}</p>
           <p class="mb-1"><strong>Data de emissão:</strong> ${formatDate(titulo.dataEmissao)}</p>
           <p class="mb-1"><strong>Documento:</strong> ${doc || '-'}</p>
           <p class="mb-1"><strong>Origem:</strong> ${origemTexto}</p>
           <p class="mb-0"><strong>Detalhes:</strong> ${linkDocumento}</p>
         </div>
         ${resumoSaldoVenda}
+        ${blocoRecebimentos}
         ${titulo.vendaId ? `<div class="alert alert-light border mt-3 mb-0">
             <h6 class="mb-1">Venda vinculada</h6>
             <small>ID da venda: #${titulo.vendaId}</small>
@@ -541,14 +609,49 @@ if (!isset($_SESSION['usuario'])) {
       const agora = new Date();
       relacaoGeradaEm = agora.toLocaleString('pt-BR');
       const totalAberto = titulosCliente.reduce((acc, t) => acc + (Number.isFinite(Number(t.restante)) ? Number(t.restante) : 0), 0);
+      const totalOriginal = titulosCliente.reduce((acc, t) => acc + (Number.isFinite(Number(t.valor)) ? Number(t.valor) : 0), 0);
+      const totalRecebido = titulosCliente.reduce((acc, t) => acc + (Number.isFinite(Number(t.totalRecebido)) ? Number(t.totalRecebido) : 0), 0);
 
       const linhas = titulosCliente.map((t) => `
         <tr>
           <td class="text-start">#${t.id}</td>
           <td class="text-start">${formatDate(t.vencimento)}</td>
+          <td class="text-end">${formatCurrency(t.valor)}</td>
+          <td class="text-end">${formatCurrency(t.totalRecebido ?? 0)}</td>
           <td class="text-end">${formatCurrency(t.restante)}</td>
         </tr>
       `).join('');
+
+      const detalhesRecebimentos = titulosCliente.map((t) => {
+        if (!Array.isArray(t.recebimentos) || !t.recebimentos.length) {
+          return '';
+        }
+        const borderosHtml = t.recebimentos.map((bordero) => {
+          const dataTexto = formatDate(bordero.data);
+          const historico = textoSeguro(bordero.historico);
+          const pagamentos = Array.isArray(bordero.pagamentos) ? bordero.pagamentos.map((pg) => {
+            const extras = [];
+            if (Number(pg.juros)) extras.push(`Juros ${formatCurrency(pg.juros)}`);
+            if (Number(pg.desconto)) extras.push(`Desconto ${formatCurrency(pg.desconto)}`);
+            if (Number(pg.acrescimo)) extras.push(`Acréscimo ${formatCurrency(pg.acrescimo)}`);
+            if (Number(pg.tarifa)) extras.push(`Tarifa ${formatCurrency(pg.tarifa)}`);
+            const extrasTexto = extras.length ? ` <span class="text-muted">(${extras.join(' • ')})</span>` : '';
+            const docPg = textoSeguro(pg.numeroDocumento);
+            const docTexto = docPg ? ` • Doc: ${docPg}` : '';
+            return `<li>Valor baixado: <strong>${formatCurrency(pg.valorAplicado ?? pg.valorPago ?? 0)}</strong>${extrasTexto}${docTexto}</li>`;
+          }).join('') : '';
+          const corpoPagamentos = pagamentos ? `<ul class="small ps-3 mb-0">${pagamentos}</ul>` : '<div class="small text-muted">Pagamentos não informados.</div>';
+          return `<div class="mb-3">
+            <div class="small fw-semibold">Borderô #${textoSeguro(bordero.id) || bordero.id || '-'} • ${dataTexto}</div>
+            ${historico ? `<div class="small text-muted mb-1">${historico}</div>` : ''}
+            ${corpoPagamentos}
+          </div>`;
+        }).join('');
+        return `<div class="mt-3">
+          <div class="fw-semibold">Conta #${t.id} — Recebido ${formatCurrency(t.totalRecebido ?? 0)}</div>
+          ${borderosHtml}
+        </div>`;
+      }).filter((html) => Boolean(html)).join('');
 
       container.innerHTML = `
         <div class="text-center mb-3">
@@ -561,6 +664,8 @@ if (!isset($_SESSION['usuario'])) {
             <tr>
               <th class="text-start">Conta</th>
               <th class="text-start">Vencimento</th>
+              <th class="text-end">Valor original</th>
+              <th class="text-end">Recebido</th>
               <th class="text-end">Saldo</th>
             </tr>
           </thead>
@@ -569,11 +674,17 @@ if (!isset($_SESSION['usuario'])) {
           </tbody>
           <tfoot>
             <tr>
-              <th colspan="2" class="text-start">Total em aberto</th>
+              <th colspan="2" class="text-start">Totais</th>
+              <th class="text-end">${formatCurrency(totalOriginal)}</th>
+              <th class="text-end">${formatCurrency(totalRecebido)}</th>
               <th class="text-end">${formatCurrency(totalAberto)}</th>
             </tr>
           </tfoot>
         </table>
+        ${detalhesRecebimentos ? `<div class="mt-4">
+            <h6 class="mb-2">Recebimentos detalhados</h6>
+            ${detalhesRecebimentos}
+          </div>` : ''}
       `;
 
       wrapper.style.display = 'block';
