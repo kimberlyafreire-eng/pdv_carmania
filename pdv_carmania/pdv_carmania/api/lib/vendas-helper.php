@@ -24,6 +24,22 @@ function getVendasDb(): SQLite3
     return $db;
 }
 
+function ensureColumnExists(SQLite3 $db, string $table, string $column, string $definition): void
+{
+    $result = $db->query('PRAGMA table_info(' . $table . ')');
+    $exists = false;
+    while ($result && ($row = $result->fetchArray(SQLITE3_ASSOC))) {
+        if (isset($row['name']) && strcasecmp($row['name'], $column) === 0) {
+            $exists = true;
+            break;
+        }
+    }
+
+    if (!$exists) {
+        $db->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
+    }
+}
+
 function ensureVendasSchema(SQLite3 $db): void
 {
     $db->exec('CREATE TABLE IF NOT EXISTS vendas (
@@ -39,6 +55,9 @@ function ensureVendasSchema(SQLite3 $db): void
         situacao_id INTEGER,
         valor_total REAL NOT NULL DEFAULT 0,
         valor_desconto REAL NOT NULL DEFAULT 0,
+        saldo_crediario_anterior REAL,
+        saldo_crediario_novo REAL,
+        valor_crediario_venda REAL,
         criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )');
@@ -71,6 +90,10 @@ function ensureVendasSchema(SQLite3 $db): void
     $db->exec('CREATE INDEX IF NOT EXISTS idx_vendas_situacao ON vendas(situacao_id)');
     $db->exec('CREATE INDEX IF NOT EXISTS idx_pagamentos_venda ON venda_pagamentos(venda_id)');
     $db->exec('CREATE INDEX IF NOT EXISTS idx_itens_venda ON venda_itens(venda_id)');
+
+    ensureColumnExists($db, 'vendas', 'saldo_crediario_anterior', 'REAL');
+    ensureColumnExists($db, 'vendas', 'saldo_crediario_novo', 'REAL');
+    ensureColumnExists($db, 'vendas', 'valor_crediario_venda', 'REAL');
 
     seedSituacoesPedido($db);
 }
@@ -126,6 +149,25 @@ function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens)
         $usuarioLogin = isset($dadosVenda['usuario_login']) ? trim((string) $dadosVenda['usuario_login']) : '';
         $usuarioNome = isset($dadosVenda['usuario_nome']) ? trim((string) $dadosVenda['usuario_nome']) : '';
         $usuarioId = isset($dadosVenda['usuario_id']) ? (int) $dadosVenda['usuario_id'] : null;
+        $saldoCrediarioAnterior = array_key_exists('saldo_crediario_anterior', $dadosVenda)
+            ? $dadosVenda['saldo_crediario_anterior']
+            : null;
+        $saldoCrediarioNovo = array_key_exists('saldo_crediario_novo', $dadosVenda)
+            ? $dadosVenda['saldo_crediario_novo']
+            : null;
+        $valorCrediarioVenda = array_key_exists('valor_crediario_venda', $dadosVenda)
+            ? $dadosVenda['valor_crediario_venda']
+            : null;
+
+        if ($saldoCrediarioAnterior !== null) {
+            $saldoCrediarioAnterior = round((float) $saldoCrediarioAnterior, 2);
+        }
+        if ($saldoCrediarioNovo !== null) {
+            $saldoCrediarioNovo = round((float) $saldoCrediarioNovo, 2);
+        }
+        if ($valorCrediarioVenda !== null) {
+            $valorCrediarioVenda = round((float) $valorCrediarioVenda, 2);
+        }
 
         if (($usuarioId === null || $usuarioId <= 0) && $usuarioLogin !== '') {
             $usuarioInfo = buscarUsuarioSistema($usuarioLogin);
@@ -157,6 +199,9 @@ function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens)
                 situacao_id = :situacao_id,
                 valor_total = :valor_total,
                 valor_desconto = :valor_desconto,
+                saldo_crediario_anterior = :saldo_crediario_anterior,
+                saldo_crediario_novo = :saldo_crediario_novo,
+                valor_crediario_venda = :valor_crediario_venda,
                 atualizado_em = CURRENT_TIMESTAMP
             WHERE id = :id';
 
@@ -173,15 +218,20 @@ function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens)
         bindNullableValue($updateStmt, ':situacao_id', ($situacaoId !== null && $situacaoId > 0) ? $situacaoId : null, SQLITE3_INTEGER);
         $updateStmt->bindValue(':valor_total', $valorTotal, SQLITE3_FLOAT);
         $updateStmt->bindValue(':valor_desconto', $valorDesconto, SQLITE3_FLOAT);
+        bindNullableValue($updateStmt, ':saldo_crediario_anterior', $saldoCrediarioAnterior, SQLITE3_FLOAT);
+        bindNullableValue($updateStmt, ':saldo_crediario_novo', $saldoCrediarioNovo, SQLITE3_FLOAT);
+        bindNullableValue($updateStmt, ':valor_crediario_venda', $valorCrediarioVenda, SQLITE3_FLOAT);
         $updateStmt->execute();
 
         if ($db->changes() === 0) {
             $insertSql = 'INSERT INTO vendas (
                     id, data_hora, contato_id, contato_nome, usuario_id, usuario_login, usuario_nome,
-                    deposito_id, deposito_nome, situacao_id, valor_total, valor_desconto, atualizado_em
+                    deposito_id, deposito_nome, situacao_id, valor_total, valor_desconto,
+                    saldo_crediario_anterior, saldo_crediario_novo, valor_crediario_venda, atualizado_em
                 ) VALUES (
                     :id, :data_hora, :contato_id, :contato_nome, :usuario_id, :usuario_login, :usuario_nome,
-                    :deposito_id, :deposito_nome, :situacao_id, :valor_total, :valor_desconto, CURRENT_TIMESTAMP
+                    :deposito_id, :deposito_nome, :situacao_id, :valor_total, :valor_desconto,
+                    :saldo_crediario_anterior, :saldo_crediario_novo, :valor_crediario_venda, CURRENT_TIMESTAMP
                 )';
 
             $insertStmt = $db->prepare($insertSql);
@@ -197,6 +247,9 @@ function registrarVendaLocal(array $dadosVenda, array $pagamentos, array $itens)
             bindNullableValue($insertStmt, ':situacao_id', ($situacaoId !== null && $situacaoId > 0) ? $situacaoId : null, SQLITE3_INTEGER);
             $insertStmt->bindValue(':valor_total', $valorTotal, SQLITE3_FLOAT);
             $insertStmt->bindValue(':valor_desconto', $valorDesconto, SQLITE3_FLOAT);
+            bindNullableValue($insertStmt, ':saldo_crediario_anterior', $saldoCrediarioAnterior, SQLITE3_FLOAT);
+            bindNullableValue($insertStmt, ':saldo_crediario_novo', $saldoCrediarioNovo, SQLITE3_FLOAT);
+            bindNullableValue($insertStmt, ':valor_crediario_venda', $valorCrediarioVenda, SQLITE3_FLOAT);
             $insertStmt->execute();
         }
 

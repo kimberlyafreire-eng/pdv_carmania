@@ -10,6 +10,7 @@ if (!isset($_SESSION['usuario'])) {
 
 require_once __DIR__ . '/lib/token-helper.php';
 require_once __DIR__ . '/lib/vendas-helper.php';
+require_once __DIR__ . '/lib/crediario-helper.php';
 require_once __DIR__ . '/lib/recibo-helper.php';
 
 $pedidoId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -146,6 +147,9 @@ try {
     $pagamentosLocal = [];
     $depositoNome = '';
     $atendente = '';
+    $saldoCrediarioAnteriorDb = null;
+    $saldoCrediarioNovoDb = null;
+    $valorCrediarioVendaDb = null;
     $db = null;
 
     try {
@@ -156,7 +160,7 @@ try {
 
     if ($db instanceof SQLite3) {
         try {
-            $stmtVenda = $db->prepare('SELECT usuario_nome, usuario_login, deposito_nome FROM vendas WHERE id = :id LIMIT 1');
+            $stmtVenda = $db->prepare('SELECT usuario_nome, usuario_login, deposito_nome, saldo_crediario_anterior, saldo_crediario_novo, valor_crediario_venda FROM vendas WHERE id = :id LIMIT 1');
             $stmtVenda->bindValue(':id', $pedidoId, SQLITE3_INTEGER);
             $resVenda = $stmtVenda->execute();
             if ($resVenda) {
@@ -167,6 +171,15 @@ try {
                         $atendente = trim((string) ($row['usuario_login'] ?? ''));
                     }
                     $depositoNome = trim((string) ($row['deposito_nome'] ?? ''));
+                    if (array_key_exists('saldo_crediario_anterior', $row) && $row['saldo_crediario_anterior'] !== null) {
+                        $saldoCrediarioAnteriorDb = round((float) $row['saldo_crediario_anterior'], 2);
+                    }
+                    if (array_key_exists('saldo_crediario_novo', $row) && $row['saldo_crediario_novo'] !== null) {
+                        $saldoCrediarioNovoDb = round((float) $row['saldo_crediario_novo'], 2);
+                    }
+                    if (array_key_exists('valor_crediario_venda', $row) && $row['valor_crediario_venda'] !== null) {
+                        $valorCrediarioVendaDb = round((float) $row['valor_crediario_venda'], 2);
+                    }
                 }
             }
 
@@ -272,82 +285,63 @@ try {
         $totalFinal = max(0.0, $totalBruto - $descontoAplicado);
     }
 
-    $isCrediario = false;
-    foreach ($formasRecibo as $forma) {
-        $nomeLower = strtolower((string) ($forma['nome'] ?? ''));
-        if (strpos($nomeLower, 'crediario') !== false || strpos($nomeLower, 'crediário') !== false) {
-            $isCrediario = true;
-            break;
-        }
-        $idForma = isset($forma['id']) ? (int) $forma['id'] : 0;
-        if ($idForma === 8126949) {
-            $isCrediario = true;
-            break;
-        }
+    [$temCrediarioFormas, $valorCrediarioDetectado] = analisarPagamentosCrediario($formasRecibo);
+    $valorCrediarioVenda = $valorCrediarioVendaDb;
+    if ($valorCrediarioVenda === null || $valorCrediarioVenda <= 0) {
+        $valorCrediarioVenda = $valorCrediarioDetectado;
     }
 
-    if (!$isCrediario && !empty($pedido['parcelas'])) {
-        foreach ($pedido['parcelas'] as $parcela) {
-            $idForma = isset($parcela['formaPagamento']['id']) ? (int) $parcela['formaPagamento']['id'] : 0;
-            if ($idForma === 8126949) {
-                $isCrediario = true;
-                break;
-            }
+    $temCrediarioParcelas = false;
+    if ((!$temCrediarioFormas || ($valorCrediarioVenda === null || $valorCrediarioVenda <= 0)) && !empty($pedido['parcelas']) && is_array($pedido['parcelas'])) {
+        [$temCrediarioParcelas, $valorCrediarioParcelas] = analisarPagamentosCrediario($pedido['parcelas']);
+        if ($valorCrediarioVenda === null || $valorCrediarioVenda <= 0) {
+            $valorCrediarioVenda = $valorCrediarioParcelas;
         }
+        $temCrediarioFormas = $temCrediarioFormas || $temCrediarioParcelas;
     }
+
+    $isCrediario = ($valorCrediarioVenda !== null && $valorCrediarioVenda > 0.009) || $temCrediarioFormas;
 
     $resumoCrediarioHtml = '';
-    if ($isCrediario && $clienteId) {
-        $callSaldo = function (string $path, array $payload) {
-            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-            $url = $scheme . '://' . $host . $path;
+    if ($isCrediario && $clienteId && $valorCrediarioVenda !== null && $valorCrediarioVenda > 0) {
+        $saldoAnteriorExibido = $saldoCrediarioAnteriorDb;
+        $saldoNovoExibido = $saldoCrediarioNovoDb;
+        $saldoConsultaAtual = null;
 
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-                CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                CURLOPT_TIMEOUT => 15,
-            ]);
+        if ($saldoAnteriorExibido === null || $saldoNovoExibido === null) {
+            $saldoConsultaAtual = consultarSaldoCrediarioCliente($clienteId, 'logRecibo');
+        }
 
-            $resp = curl_exec($ch);
-            $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $err = curl_error($ch);
-            curl_close($ch);
-
-            logRecibo("↪️ saldo.php: POST {$url} (HTTP {$http})" . ($err ? " ERR={$err}" : ''));
-            return [$http, $resp];
-        };
-
-        $saldoConsulta = 0.0;
-        $payloadSaldo = ['clienteId' => (string) $clienteId];
-        $tentativas = [
-            '/pdv_carmania/api/crediario/saldo.php',
-            '/pdv_carmania/api/saldo.php',
-        ];
-
-        foreach ($tentativas as $path) {
-            [$http, $resp] = $callSaldo($path, $payloadSaldo);
-            if ($http === 200 && $resp) {
-                $jsonSaldo = json_decode($resp, true);
-                if (!empty($jsonSaldo['ok']) && isset($jsonSaldo['saldoAtual'])) {
-                    $saldoConsulta = (float) $jsonSaldo['saldoAtual'];
-                    logRecibo("✅ Saldo obtido via {$path} -> R$ " . number_format($saldoConsulta, 2, ',', '.'));
-                    break;
-                }
-                logRecibo("⚠️ Resposta inesperada de {$path} -> {$resp}");
+        if ($saldoAnteriorExibido === null) {
+            if ($saldoConsultaAtual !== null) {
+                $saldoAnteriorExibido = round($saldoConsultaAtual - $valorCrediarioVenda, 2);
             } else {
-                logRecibo("⚠️ Falha ao consultar {$path} (HTTP {$http}) -> {$resp}");
+                $saldoAnteriorExibido = 0.0;
             }
         }
 
-        $saldoAnteriorEstimado = round($saldoConsulta - $totalFinal, 2);
-        if (abs($saldoAnteriorEstimado) < 0.01) {
-            $saldoAnteriorEstimado = 0.0;
+        if ($saldoAnteriorExibido < 0 && abs($saldoAnteriorExibido) > 0.01) {
+            $saldoAnteriorExibido = 0.0;
         }
-        $novoSaldo = $saldoConsulta;
+        if (abs($saldoAnteriorExibido) < 0.01) {
+            $saldoAnteriorExibido = 0.0;
+        }
+
+        if ($saldoNovoExibido === null) {
+            if ($saldoConsultaAtual !== null) {
+                $saldoNovoExibido = round((float) $saldoConsultaAtual, 2);
+            } else {
+                $saldoNovoExibido = round($saldoAnteriorExibido + $valorCrediarioVenda, 2);
+            }
+        }
+
+        $saldoEstimado = round($saldoAnteriorExibido + $valorCrediarioVenda, 2);
+        if ($saldoNovoExibido < $saldoEstimado - 0.01) {
+            $saldoNovoExibido = $saldoEstimado;
+        }
+        if (abs($saldoNovoExibido) < 0.01) {
+            $saldoNovoExibido = 0.0;
+        }
 
         $resumoCrediarioHtml = "
     <div style='
@@ -363,12 +357,14 @@ try {
     '>
       <p style='margin:3px 0;font-weight:bold;'>💳 Resumo do Crediário</p>
       <table style='width:100%;font-size:12px;'>
-        <tr><td style='text-align:left;'>Saldo Anterior:</td><td style='text-align:right;'>R$ " . number_format($saldoAnteriorEstimado, 2, ',', '.') . "</td></tr>
-        <tr><td style='text-align:left;'>Compra Atual:</td><td style='text-align:right;'>R$ " . number_format($totalFinal, 2, ',', '.') . "</td></tr>
+        <tr><td style='text-align:left;'>Saldo Anterior:</td><td style='text-align:right;'>R$ " . number_format($saldoAnteriorExibido, 2, ',', '.') . "</td></tr>
+        <tr><td style='text-align:left;'>Compra Atual:</td><td style='text-align:right;'>R$ " . number_format($valorCrediarioVenda, 2, ',', '.') . "</td></tr>
         <tr><td colspan='2'><hr style='border:0;border-top:1px dashed #ccc;'></td></tr>
-        <tr><td style='text-align:left;'><b>Novo Saldo:</b></td><td style='text-align:right;color:#dc3545;'><b>R$ " . number_format($novoSaldo, 2, ',', '.') . "</b></td></tr>
+        <tr><td style='text-align:left;'><b>Novo Saldo:</b></td><td style='text-align:right;color:#dc3545;'><b>R$ " . number_format($saldoNovoExibido, 2, ',', '.') . "</b></td></tr>
       </table>
     </div>";
+
+        logRecibo('💳 Resumo crediário histórico -> anterior exibido: ' . $saldoAnteriorExibido . ' | valor venda: ' . $valorCrediarioVenda . ' | saldo armazenado novo: ' . ($saldoCrediarioNovoDb !== null ? (string) $saldoCrediarioNovoDb : 'n/d') . ' | saldo consultado atual: ' . ($saldoConsultaAtual !== null ? (string) $saldoConsultaAtual : 'n/d') . ' | novo exibido: ' . $saldoNovoExibido);
     }
 
     $reciboHtml = gerarReciboHtml([
