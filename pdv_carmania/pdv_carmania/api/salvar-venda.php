@@ -530,6 +530,7 @@ if (!$isCrediario || $valorCrediarioGerado <= 0) {
 }
 
 // 🗃️ Persiste a venda no banco local
+$dataHoraVenda = date('Y-m-d H:i:s');
 if ($pedidoId) {
     $situacaoRegistrada = (int) ($rj['data']['situacao']['id'] ?? 9);
     $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
@@ -537,7 +538,7 @@ if ($pedidoId) {
     try {
         registrarVendaLocal([
             'id' => (int) $pedidoId,
-            'data_hora' => date('Y-m-d H:i:s'),
+            'data_hora' => $dataHoraVenda,
             'contato_id' => $clienteId ? (int) $clienteId : null,
             'contato_nome' => $clienteNome,
             'usuario_login' => $usuarioResponsavel,
@@ -582,6 +583,7 @@ $reciboHtml = gerarReciboHtml([
     'itens' => $itensRecibo,
     'formas' => $nomesFormas,
     'resumoCrediarioHtml' => $resumoCrediarioHtml,
+    'dataHoraVenda' => $dataHoraVenda,
 ]);
 
 echo json_encode([

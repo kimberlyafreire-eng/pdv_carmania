@@ -15,6 +15,48 @@ function gerarReciboHtml(array $dados): string
     $descontoAplicado = round((float)($dados['descontoAplicado'] ?? 0), 2);
     $totalFinal = round((float)($dados['totalFinal'] ?? $totalBruto), 2);
     $resumoCrediarioHtml = (string)($dados['resumoCrediarioHtml'] ?? '');
+    $dataHoraVendaFormatada = '';
+
+    $normalizarDataHora = static function ($data, $hora = null) {
+        if ($data === null) {
+            return null;
+        }
+        $data = trim((string) $data);
+        if ($data === '') {
+            return null;
+        }
+
+        if ($hora !== null) {
+            $hora = trim((string) $hora);
+            if ($hora !== '' && preg_match('/^\d{2}:\d{2}(?::\d{2})?$/', $hora)) {
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $data)) {
+                    $data .= ' ' . $hora;
+                } elseif (!preg_match('/\d{2}:\d{2}/', $data)) {
+                    $data .= ' ' . $hora;
+                }
+            }
+        }
+
+        $data = str_replace('T', ' ', $data);
+
+        try {
+            return new DateTime($data);
+        } catch (Throwable $e) {
+            return null;
+        }
+    };
+
+    $dataHoraVendaObj = $normalizarDataHora($dados['dataHoraVenda'] ?? null);
+    if ($dataHoraVendaObj === null && array_key_exists('dataVenda', $dados)) {
+        $dataHoraVendaObj = $normalizarDataHora($dados['dataVenda'] ?? null, $dados['horaVenda'] ?? null);
+    }
+    if ($dataHoraVendaObj === null && array_key_exists('dataHora', $dados)) {
+        $dataHoraVendaObj = $normalizarDataHora($dados['dataHora'] ?? null);
+    }
+
+    if ($dataHoraVendaObj instanceof DateTime) {
+        $dataHoraVendaFormatada = $dataHoraVendaObj->format('d/m/Y H:i');
+    }
 
     $itens = [];
     if (!empty($dados['itens']) && is_array($dados['itens'])) {
@@ -167,7 +209,7 @@ HTML;
     $reciboHtml .= $atendenteHtml;
 
     $reciboHtml .= "    <p style='margin:2px 0;'>Pedido: <b>" . htmlspecialchars((string)$pedidoId, ENT_QUOTES, 'UTF-8') . "</b></p>";
-    $reciboHtml .= "    <p style='margin:2px 0;'>Cliente: <b>" . htmlspecialchars($clienteNome, ENT_QUOTES, 'UTF-8') . "</b></p>";
+    $reciboHtml .= "    <p style='margin:2px 0;'>Cliente: <b style='color:#dc3545;'>" . htmlspecialchars($clienteNome, ENT_QUOTES, 'UTF-8') . "</b></p>";
     $reciboHtml .= "    <hr class='recibo-divider'>";
 
     if ($totalItens > 0) {
@@ -200,6 +242,14 @@ HTML;
     $reciboHtml .= "    <hr class='recibo-divider'>";
     $reciboHtml .= "    <p style='margin:2px 0;'>Estoque: <b>" . htmlspecialchars($depositoMostrar, ENT_QUOTES, 'UTF-8') . "</b></p>";
     $reciboHtml .= "    <hr class='recibo-divider'>";
+
+    if ($dataHoraVendaFormatada !== '') {
+        $reciboHtml .= "    <table style='width:100%;font-size:0.85em;color:#555;margin:4px 0 10px;'>";
+        $reciboHtml .= "      <tr><td style='text-align:left;'>📅 Data da venda:</td><td style='text-align:right;'><b>" . htmlspecialchars($dataHoraVendaFormatada, ENT_QUOTES, 'UTF-8') . "</b></td></tr>";
+        $reciboHtml .= "    </table>";
+        $reciboHtml .= "    <hr class='recibo-divider'>";
+    }
+
     $reciboHtml .= "    <p style='margin:5px 0; font-size:0.9em; color:#222;'>Obrigado pela preferência!</p>";
     $reciboHtml .= "  </div>";
     $reciboHtml .= "</div>";
