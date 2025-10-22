@@ -92,6 +92,41 @@ if ($usuarioLogado && file_exists($dbFile)) {
     .form-select:disabled {
       opacity: 0.7;
     }
+
+    tr[data-id] {
+      cursor: pointer;
+      transition: background-color 0.2s ease-in-out;
+    }
+
+    tr[data-id]:hover {
+      background-color: #fff2f2;
+    }
+
+    tr[data-id].linha-aberta {
+      background-color: #ffe5e5;
+    }
+
+    .linha-detalhe-estoque td {
+      background-color: #fff8f8;
+      padding: 0;
+      border-top: 1px solid rgba(220, 53, 69, 0.15);
+    }
+
+    .detalhe-estoque-conteudo {
+      padding: 1.25rem 1.5rem;
+    }
+
+    .detalhe-estoque-conteudo .list-group-item {
+      background-color: transparent;
+      border: none;
+      border-top: 1px solid rgba(0, 0, 0, 0.05);
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .detalhe-estoque-conteudo .list-group-item:first-child {
+      border-top: none;
+    }
   </style>
 </head>
 <body>
@@ -177,9 +212,22 @@ if ($usuarioLogado && file_exists($dbFile)) {
     let produtos = [];
     let estoqueAtual = {};
     let depositos = [];
+    const estoqueDetalhadoCache = Object.create(null);
+    const detalhesAbertos = new Set();
+    const carregamentosPendentes = new Map();
 
     const formatarMoeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
     const formatarNumero = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+
+    function obterClasseEstoque(quantidade) {
+      if (quantidade > 0) {
+        return 'bg-success-subtle text-success';
+      }
+      if (quantidade < 0) {
+        return 'bg-danger-subtle text-danger';
+      }
+      return 'bg-secondary-subtle text-secondary';
+    }
 
     function escapeHtml(texto) {
       return String(texto ?? '').replace(/[&<>'"]/g, function (c) {
@@ -203,6 +251,9 @@ if ($usuarioLogado && file_exists($dbFile)) {
     }
 
     function renderizarTabela() {
+      detalhesAbertos.clear();
+      carregamentosPendentes.clear();
+
       if (!produtos.length) {
         tabelaProdutos.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">Nenhum produto encontrado no banco local.</td></tr>';
         return;
@@ -210,16 +261,11 @@ if ($usuarioLogado && file_exists($dbFile)) {
 
       const linhas = produtos.map(produto => {
         const estoque = estoqueAtual[produto.id] ?? 0;
-        let estoqueBadgeClass = 'bg-secondary-subtle text-secondary';
-        if (estoque > 0) {
-          estoqueBadgeClass = 'bg-success-subtle text-success';
-        } else if (estoque < 0) {
-          estoqueBadgeClass = 'bg-danger-subtle text-danger';
-        }
+        const estoqueBadgeClass = obterClasseEstoque(estoque);
         const gtin = produto.gtin ? escapeHtml(produto.gtin) : '—';
 
         return `
-          <tr data-id="${produto.id}">
+          <tr data-id="${produto.id}" title="Clique para ver o estoque por depósito">
             <td class="text-center">
               <img src="${escapeHtml(produto.imagemURL || '')}" alt="Imagem do produto" class="produto-imagem" onerror="this.src='../imagens/sem-imagem.png'" />
             </td>
@@ -229,10 +275,13 @@ if ($usuarioLogado && file_exists($dbFile)) {
               <div class="text-muted small" data-gtin="${produto.id}">GTIN: <span class="valor-gtin">${gtin}</span></div>
             </td>
             <td class="text-center">
-              <span class="badge rounded-pill badge-estoque ${estoqueBadgeClass}">${formatarNumero.format(estoque)}</span>
+              <div class="d-flex flex-column align-items-center gap-1">
+                <span class="badge rounded-pill badge-estoque ${estoqueBadgeClass}">${formatarNumero.format(estoque)}</span>
+                <small class="text-muted">Ver depósitos</small>
+              </div>
             </td>
             <td class="text-end">${formatarMoeda.format(produto.preco || 0)}</td>
-            <td class="text-end">
+            <td class="text-end" data-no-detalhe>
               <div class="btn-group btn-group-sm" role="group">
                 <button type="button" class="btn btn-outline-primary" data-action="consultar_gtin" data-id="${produto.id}">Consultar código de barras</button>
                 <button type="button" class="btn btn-outline-danger" data-action="excluir" data-id="${produto.id}">Excluir</button>
@@ -331,6 +380,168 @@ if ($usuarioLogado && file_exists($dbFile)) {
       renderizarTabela();
     }
 
+    function limparCacheDetalhado() {
+      Object.keys(estoqueDetalhadoCache).forEach((key) => delete estoqueDetalhadoCache[key]);
+    }
+
+    function obterDescricaoDeposito(idDeposito) {
+      if (idDeposito === null || idDeposito === undefined || idDeposito === '') {
+        return 'Depósito não informado';
+      }
+
+      const encontrado = depositos.find(dep => String(dep.id) === String(idDeposito));
+      if (encontrado) {
+        return encontrado.descricao || `Depósito ${idDeposito}`;
+      }
+
+      return `Depósito ${idDeposito}`;
+    }
+
+    function montarHtmlDetalheEstoque(dados) {
+      if (!dados || dados.ok === false) {
+        throw new Error(dados?.erro || 'Não foi possível carregar o estoque detalhado.');
+      }
+
+      const totalFormatado = formatarNumero.format(dados.total ?? 0);
+      const depositosDetalhados = Array.isArray(dados.depositos) ? dados.depositos : [];
+
+      if (!dados.possuiDepositos) {
+        const saldo = depositosDetalhados.length ? depositosDetalhados[0].saldo ?? 0 : dados.total ?? 0;
+        const badgeClass = obterClasseEstoque(saldo);
+        return `
+          <div class="detalhe-estoque-conteudo">
+            <div class="fw-semibold text-danger mb-2">Estoque consolidado</div>
+            <p class="text-muted mb-3">O banco local não possui depósitos individualizados para este produto.</p>
+            <div class="d-flex align-items-center gap-3">
+              <span class="badge rounded-pill badge-estoque ${badgeClass}">${formatarNumero.format(saldo)}</span>
+              <span class="text-muted small">Saldo total</span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (!depositosDetalhados.length) {
+        return `
+          <div class="detalhe-estoque-conteudo">
+            <div class="fw-semibold text-danger mb-2">Estoque por depósito</div>
+            <p class="text-muted mb-0">Nenhum saldo cadastrado para este produto nos depósitos sincronizados.</p>
+          </div>
+        `;
+      }
+
+      const depositoSelecionado = selectDeposito.value || 'geral';
+
+      const linhas = depositosDetalhados.map(item => {
+        const descricao = obterDescricaoDeposito(item.idDeposito);
+        const saldo = item.saldo ?? 0;
+        const badgeClass = obterClasseEstoque(saldo);
+        const isSelecionado = depositoSelecionado !== 'geral' && String(depositoSelecionado) === String(item.idDeposito);
+        const badgeFiltro = isSelecionado ? '<span class="badge bg-danger-subtle text-danger ms-2">Filtro atual</span>' : '';
+
+        return `
+          <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <div class="fw-semibold">${escapeHtml(descricao)}${badgeFiltro}</div>
+              <div class="text-muted small">ID: ${escapeHtml(item.idDeposito ?? '—')}</div>
+            </div>
+            <span class="badge rounded-pill badge-estoque ${badgeClass}">${formatarNumero.format(saldo)}</span>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="detalhe-estoque-conteudo">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <span class="fw-semibold text-danger">Estoque por depósito</span>
+            <span class="text-muted small">Total: ${totalFormatado}</span>
+          </div>
+          <div class="list-group list-group-flush">
+            ${linhas}
+          </div>
+          <div class="text-muted small mt-3">Clique novamente na linha do produto para ocultar o detalhamento.</div>
+        </div>
+      `;
+    }
+
+    async function obterEstoqueDetalhado(idProduto) {
+      const chave = String(idProduto);
+      if (estoqueDetalhadoCache[chave]) {
+        return estoqueDetalhadoCache[chave];
+      }
+
+      const resposta = await fetch('../api/produto-estoque-detalhado.php?idProduto=' + encodeURIComponent(chave));
+      const json = await resposta.json();
+      if (!json.ok) {
+        throw new Error(json.erro || 'Falha ao carregar o detalhamento de estoque.');
+      }
+
+      estoqueDetalhadoCache[chave] = json;
+      return json;
+    }
+
+    function fecharDetalheEstoque(linha) {
+      const idProduto = String(linha.getAttribute('data-id'));
+      const proximaLinha = linha.nextElementSibling;
+      if (proximaLinha && proximaLinha.classList.contains('linha-detalhe-estoque')) {
+        proximaLinha.remove();
+      }
+      linha.classList.remove('linha-aberta');
+      detalhesAbertos.delete(idProduto);
+      carregamentosPendentes.delete(idProduto);
+    }
+
+    async function abrirDetalheEstoque(linha) {
+      const idProduto = String(linha.getAttribute('data-id'));
+
+      const existente = linha.nextElementSibling;
+      if (existente && existente.classList.contains('linha-detalhe-estoque')) {
+        existente.remove();
+      }
+
+      const detalheRow = document.createElement('tr');
+      detalheRow.className = 'linha-detalhe-estoque';
+      detalheRow.innerHTML = '<td colspan="5"><div class="py-3 text-center text-muted small">Carregando detalhamento de estoque...</div></td>';
+      linha.insertAdjacentElement('afterend', detalheRow);
+      linha.classList.add('linha-aberta');
+
+      detalhesAbertos.add(idProduto);
+      const marcador = Symbol('carregamento');
+      carregamentosPendentes.set(idProduto, marcador);
+
+      try {
+        const dados = await obterEstoqueDetalhado(idProduto);
+        if (carregamentosPendentes.get(idProduto) !== marcador || !detalheRow.isConnected) {
+          return;
+        }
+        const html = montarHtmlDetalheEstoque(dados);
+        detalheRow.innerHTML = `<td colspan="5">${html}</td>`;
+      } catch (erro) {
+        if (carregamentosPendentes.get(idProduto) !== marcador || !detalheRow.isConnected) {
+          return;
+        }
+        detalheRow.innerHTML = `<td colspan="5"><div class="py-3 text-center text-danger small">${escapeHtml(erro.message || 'Não foi possível carregar o estoque detalhado.')}</div></td>`;
+      } finally {
+        if (carregamentosPendentes.get(idProduto) === marcador) {
+          carregamentosPendentes.delete(idProduto);
+        }
+      }
+    }
+
+    async function alternarDetalheEstoque(linha) {
+      if (!linha || !linha.hasAttribute('data-id')) {
+        return;
+      }
+
+      const idProduto = String(linha.getAttribute('data-id'));
+
+      if (detalhesAbertos.has(idProduto)) {
+        fecharDetalheEstoque(linha);
+        return;
+      }
+
+      await abrirDetalheEstoque(linha);
+    }
+
     async function inicializar() {
       await carregarProdutos();
       await carregarDepositos();
@@ -404,6 +615,9 @@ if ($usuarioLogado && file_exists($dbFile)) {
 
         produtos = produtos.filter(p => String(p.id) !== String(idProduto));
         delete estoqueAtual[idProduto];
+        delete estoqueDetalhadoCache[String(idProduto)];
+        detalhesAbertos.delete(String(idProduto));
+        carregamentosPendentes.delete(String(idProduto));
         renderizarTabela();
 
         mostrarAlerta('success', json.mensagem || 'Produto removido com sucesso.');
@@ -422,15 +636,28 @@ if ($usuarioLogado && file_exists($dbFile)) {
 
     tabelaProdutos.addEventListener('click', (event) => {
       const botao = event.target.closest('button[data-action]');
-      if (!botao) return;
-      const idProduto = botao.getAttribute('data-id');
-      const acao = botao.getAttribute('data-action');
+      if (botao) {
+        const idProduto = botao.getAttribute('data-id');
+        const acao = botao.getAttribute('data-action');
 
-      if (acao === 'consultar_gtin') {
-        consultarGtin(idProduto, botao);
-      } else if (acao === 'excluir') {
-        excluirProduto(idProduto, botao);
+        if (acao === 'consultar_gtin') {
+          consultarGtin(idProduto, botao);
+        } else if (acao === 'excluir') {
+          excluirProduto(idProduto, botao);
+        }
+        return;
       }
+
+      if (event.target.closest('[data-no-detalhe]')) {
+        return;
+      }
+
+      const linha = event.target.closest('tr[data-id]');
+      if (!linha) {
+        return;
+      }
+
+      alternarDetalheEstoque(linha);
     });
 
     async function sincronizarProdutos() {
@@ -468,6 +695,7 @@ if ($usuarioLogado && file_exists($dbFile)) {
 
         await carregarProdutos();
         await carregarEstoqueDeposito();
+        limparCacheDetalhado();
         renderizarTabela();
       } catch (erro) {
         console.error('Erro ao sincronizar produtos:', erro);
