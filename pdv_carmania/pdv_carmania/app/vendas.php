@@ -310,6 +310,7 @@ if (!isset($_SESSION['usuario'])) {
   <div id="reciboContainer"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script>
     const tabelaCorpo = document.getElementById('tabelaVendasCorpo');
     const semResultados = document.getElementById('semResultados');
@@ -621,17 +622,20 @@ if (!isset($_SESSION['usuario'])) {
     function exibirRecibo(html) {
       reciboContainer.innerHTML = `
         <div class="recibo-wrapper">
-          <div class="recibo-conteudo">${html}</div>
+          <div class="recibo-area"><div id="reciboVendaHtml">${html}</div></div>
           <div class="recibo-acoes">
             <button type="button" class="btn btn-primary" id="btnImprimirRecibo">🖨 Imprimir</button>
             <button type="button" class="btn btn-secondary" id="btnCopiarRecibo">📋 Copiar</button>
+            <button type="button" class="btn btn-success" id="btnCompartilharRecibo">📤 Compartilhar</button>
             <button type="button" class="btn btn-outline-dark" id="btnFecharRecibo">Fechar</button>
           </div>
         </div>`;
       reciboContainer.dataset.htmlRecibo = html;
       reciboContainer.classList.add('ativo');
+      gerarImagemReciboAtual();
       document.getElementById('btnImprimirRecibo')?.addEventListener('click', imprimirReciboAtual);
       document.getElementById('btnCopiarRecibo')?.addEventListener('click', copiarReciboAtual);
+      document.getElementById('btnCompartilharRecibo')?.addEventListener('click', compartilharReciboAtual);
       document.getElementById('btnFecharRecibo')?.addEventListener('click', fecharRecibo);
     }
 
@@ -639,6 +643,25 @@ if (!isset($_SESSION['usuario'])) {
       reciboContainer.classList.remove('ativo');
       reciboContainer.innerHTML = '';
       delete reciboContainer.dataset.htmlRecibo;
+    }
+
+    async function gerarImagemReciboAtual() {
+      const reciboHtmlEl = document.getElementById('reciboVendaHtml');
+      if (!reciboHtmlEl || typeof html2canvas !== 'function') {
+        return;
+      }
+      try {
+        const canvas = await html2canvas(reciboHtmlEl);
+        const img = document.createElement('img');
+        img.id = 'reciboVendaImg';
+        img.src = canvas.toDataURL('image/png');
+        img.alt = 'Recibo PDV Carmania';
+        img.classList.add('img-fluid');
+        img.dataset.htmlRecibo = reciboContainer.dataset.htmlRecibo || '';
+        reciboHtmlEl.replaceWith(img);
+      } catch (erro) {
+        console.error('Falha ao gerar imagem do recibo', erro);
+      }
     }
 
     function imprimirReciboAtual() {
@@ -659,21 +682,48 @@ if (!isset($_SESSION['usuario'])) {
     }
 
     async function copiarReciboAtual() {
-      const html = reciboContainer.dataset.htmlRecibo || '';
-      if (!html) {
+      const img = document.getElementById('reciboVendaImg');
+      const html = reciboContainer.dataset.htmlRecibo || img?.dataset.htmlRecibo || '';
+      if (!img && !html) {
         alert('Recibo não disponível no momento.');
         return;
       }
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(html);
+        if (img && navigator.clipboard?.write && window.ClipboardItem) {
+          const blob = await fetch(img.src).then(r => r.blob());
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
           alert('Recibo copiado!');
-        } else {
-          throw new Error('Clipboard API não suportada.');
+          return;
         }
+        if (html && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(html);
+          alert('Recibo copiado como texto!');
+          return;
+        }
+        throw new Error('Clipboard API não suportada.');
       } catch (erro) {
         console.error(erro);
         alert('Não foi possível copiar o recibo automaticamente.');
+      }
+    }
+
+    async function compartilharReciboAtual() {
+      const img = document.getElementById('reciboVendaImg');
+      if (!img) {
+        alert('Recibo não disponível no momento.');
+        return;
+      }
+      try {
+        const blob = await fetch(img.src).then(r => r.blob());
+        const arquivo = new File([blob], 'recibo-pdv.png', { type: 'image/png' });
+        if (navigator.share) {
+          await navigator.share({ files: [arquivo], title: 'Recibo PDV Carmania' });
+        } else {
+          alert('Compartilhar não é suportado neste dispositivo.');
+        }
+      } catch (erro) {
+        console.error(erro);
+        alert('Não foi possível compartilhar o recibo automaticamente.');
       }
     }
 
