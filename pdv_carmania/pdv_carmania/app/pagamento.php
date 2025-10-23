@@ -435,6 +435,14 @@ if ($usuarioLogado) {
       return nome.includes('dinheiro') || id === '2009802';
     }
 
+    function isBoleto(forma){
+      if(!forma) return false;
+      const nome = String(forma.nome || forma.forma || '').toLowerCase();
+      const id = String(forma.id ?? '');
+      const boletoIds = ['7697681','2941141','7749678'];
+      return boletoIds.includes(id) || nome.includes('boleto');
+    }
+
     function voltar(){ window.location.href = "index.php"; }
 
     function selecionarForma(nome, id){
@@ -582,9 +590,50 @@ if ($usuarioLogado) {
       telaPagamentoEl.style.display = "";
     }
 
+    function validarDadosClienteParaBoleto(cliente){
+      const problemas = [];
+      if (!cliente || !cliente.id) {
+        problemas.push('Selecione um cliente válido.');
+        return problemas;
+      }
+
+      const nome = String(cliente.nome || '').trim();
+      const partesNome = nome.split(/\s+/).filter(Boolean);
+      if (partesNome.length < 2) {
+        problemas.push('Cadastre o nome completo do cliente (nome e sobrenome).');
+      }
+
+      const documentoBruto = String(cliente.numeroDocumento || cliente.documento || '').replace(/\D+/g, '');
+      if (!(documentoBruto.length === 11 || documentoBruto.length === 14)) {
+        problemas.push('Informe o CPF ou CNPJ completo do cliente.');
+      }
+
+      const enderecoBase = cliente?.endereco?.geral || cliente?.endereco || {};
+      const rua = String(enderecoBase.endereco || '').trim();
+      const municipio = String(enderecoBase.municipio || '').trim();
+      const uf = String(enderecoBase.uf || '').trim();
+      const cepDigitos = String(enderecoBase.cep || '').replace(/\D+/g, '');
+
+      if (!rua) problemas.push('Informe o logradouro (rua/avenida) do cliente.');
+      if (!municipio) problemas.push('Informe a cidade do cliente.');
+      if (!uf || uf.length !== 2) problemas.push('Informe a UF do cliente.');
+      if (cepDigitos.length !== 8) problemas.push('Informe o CEP completo (8 dígitos) do cliente.');
+
+      return problemas;
+    }
+
     async function concluirVenda(){
       if (!clienteSelecionado?.id) return alert("Cliente não selecionado.");
       if (!carrinho.length) return alert("Carrinho vazio.");
+
+      const possuiBoleto = pagamentos.some((p) => isBoleto(p));
+      if (possuiBoleto) {
+        const pendencias = validarDadosClienteParaBoleto(clienteSelecionado);
+        if (pendencias.length) {
+          alert('Não é possível concluir a venda com boleto. Ajuste o cadastro do cliente:\n' + pendencias.map((p) => `- ${p}`).join('\n'));
+          return;
+        }
+      }
 
       btnConcluirEl.disabled = true;
       mostrarProcessandoRecibo();
@@ -636,6 +685,9 @@ if ($usuarioLogado) {
         const data=await res.json();
         if(!res.ok||!data.ok) throw new Error(data?.erro || (Array.isArray(data) ? JSON.stringify(data) : 'Falha ao salvar venda.'));
 
+        const numeroNfe = data?.nfeNumero ?? null;
+        const mensagemErroNfe = typeof data?.nfeErro === 'string' ? data.nfeErro.trim() : '';
+
         localStorage.clear();
         reciboContainerEl.innerHTML = `<div class="recibo-area"><div id="recibo">${data.reciboHtml}</div></div>`;
 
@@ -648,6 +700,18 @@ if ($usuarioLogado) {
               <button class="btn btn-dark" onclick="window.location.href='index.php'">⬅ Nova Venda</button>
             </div>
             <div class="alert alert-success mt-3 text-center fw-bold text-uppercase">VENDA CONCLUÍDA COM SUCESSO</div>`);
+
+          if (numeroNfe) {
+            const alertaNfeOk = document.createElement('div');
+            alertaNfeOk.className = 'alert alert-info mt-2 text-center';
+            alertaNfeOk.textContent = `NF gerada e vinculada ao pedido. Número: ${numeroNfe}.`;
+            reciboContainerEl.appendChild(alertaNfeOk);
+          } else if (mensagemErroNfe) {
+            const alertaNfeErro = document.createElement('div');
+            alertaNfeErro.className = 'alert alert-warning mt-2 text-center';
+            alertaNfeErro.textContent = `Não foi possível gerar a NF automaticamente: ${mensagemErroNfe}`;
+            reciboContainerEl.appendChild(alertaNfeErro);
+          }
         });
       }catch(err){
         console.error(err);
