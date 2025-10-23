@@ -132,14 +132,49 @@ function bling_request($method, $path, $body = null) {
     return ['http' => $http, 'body' => $resp];
 }
 
+function formaPagamentoEhDinheiroPorId($idValor): bool
+{
+    if ($idValor === null) {
+        return false;
+    }
+
+    $idString = trim((string) $idValor);
+    if ($idString === '') {
+        return false;
+    }
+
+    return (int) $idString === 2009802;
+}
+
+function obterIdsFormasBoleto(): array
+{
+    return [7697681, 2941141, 7749678];
+}
+
+function formaPagamentoEhBoletoPorId($idValor): bool
+{
+    if ($idValor === null) {
+        return false;
+    }
+
+    $idString = trim((string) $idValor);
+    if ($idString === '') {
+        return false;
+    }
+
+    $idInt = (int) $idString;
+    if ($idInt <= 0) {
+        return false;
+    }
+
+    return in_array($idInt, obterIdsFormasBoleto(), true);
+}
+
 function pagamentoEhDinheiro(array $pagamento): bool
 {
     $idValor = $pagamento['id'] ?? null;
-    if ($idValor !== null) {
-        $idString = trim((string) $idValor);
-        if ($idString !== '' && (int) $idString === 2009802) {
-            return true;
-        }
+    if (formaPagamentoEhDinheiroPorId($idValor)) {
+        return true;
     }
 
     $nome = strtolower(trim((string) ($pagamento['forma'] ?? $pagamento['nome'] ?? '')));
@@ -153,15 +188,8 @@ function pagamentoEhDinheiro(array $pagamento): bool
 function pagamentoEhBoleto(array $pagamento): bool
 {
     $idValor = $pagamento['id'] ?? null;
-    if ($idValor !== null) {
-        $idString = trim((string) $idValor);
-        if ($idString !== '') {
-            $idInt = (int) $idString;
-            $idsBoleto = [7697681, 2941141, 7749678];
-            if (in_array($idInt, $idsBoleto, true)) {
-                return true;
-            }
-        }
+    if (formaPagamentoEhBoletoPorId($idValor)) {
+        return true;
     }
 
     $nome = strtolower(trim((string) ($pagamento['forma'] ?? $pagamento['nome'] ?? '')));
@@ -170,6 +198,29 @@ function pagamentoEhBoleto(array $pagamento): bool
     }
 
     return false;
+}
+
+function ajustarNomeComSobrenome(string $nome): array
+{
+    $nomeLimpo = trim($nome);
+    if ($nomeLimpo === '') {
+        return ['', false];
+    }
+
+    $partes = preg_split('/\s+/u', $nomeLimpo, -1, PREG_SPLIT_NO_EMPTY);
+    if (!$partes) {
+        return [$nomeLimpo, false];
+    }
+
+    $partesValidas = array_filter($partes, function ($parte) {
+        return $parte !== '';
+    });
+
+    if (count($partesValidas) >= 2) {
+        return [$nomeLimpo, false];
+    }
+
+    return [$nomeLimpo . ' Cliente', true];
 }
 
 function limparCamposNulos(array $dados): array
@@ -202,7 +253,12 @@ function limparCamposNulos(array $dados): array
 
 function obterContatoParaNfe(int $clienteId, string $clienteNome): array
 {
-    $fallback = ['id' => $clienteId, 'nome' => $clienteNome];
+    [$nomeFallback, $fallbackAjustado] = ajustarNomeComSobrenome($clienteNome);
+    if ($fallbackAjustado) {
+        logMsg('ℹ️ Nome do cliente informado sem sobrenome. Ajuste automático aplicado para emissão da NF.');
+    }
+
+    $fallback = ['id' => $clienteId, 'nome' => $nomeFallback];
     $resContato = bling_request('GET', "contatos/{$clienteId}");
     if ($resContato['http'] < 200 || $resContato['http'] >= 300) {
         logMsg("⚠️ Falha ao obter contato {$clienteId} para NF (HTTP {$resContato['http']}) -> {$resContato['body']}");
@@ -216,9 +272,15 @@ function obterContatoParaNfe(int $clienteId, string $clienteNome): array
         return $fallback;
     }
 
+    $nomeContato = (string) ($dadosContato['nome'] ?? $clienteNome);
+    [$nomeContatoAjustado, $foiAjustado] = ajustarNomeComSobrenome($nomeContato);
+    if ($foiAjustado) {
+        logMsg("ℹ️ Nome do contato {$clienteId} estava sem sobrenome. Ajustado automaticamente para '{$nomeContatoAjustado}'.");
+    }
+
     $contato = [
         'id' => (int) ($dadosContato['id'] ?? $clienteId),
-        'nome' => (string) ($dadosContato['nome'] ?? $clienteNome),
+        'nome' => $nomeContatoAjustado,
         'tipoPessoa' => $dadosContato['tipoPessoa'] ?? ($dadosContato['tipo'] ?? null),
         'numeroDocumento' => $dadosContato['numeroDocumento'] ?? ($dadosContato['numeroDocumentoPrincipal'] ?? ($dadosContato['cpfCnpj'] ?? null)),
         'ie' => $dadosContato['ie'] ?? null,
@@ -659,6 +721,16 @@ foreach ($pagamentos as $p) {
     }
 }
 
+if (!$temPagamentoBoleto && !empty($parcelas)) {
+    foreach ($parcelas as $parcelaDetectar) {
+        $formaParcelaId = $parcelaDetectar['formaPagamento']['id'] ?? null;
+        if (formaPagamentoEhBoletoPorId($formaParcelaId)) {
+            $temPagamentoBoleto = true;
+            break;
+        }
+    }
+}
+
 [$isCrediario, $valorCrediarioGerado] = analisarPagamentosCrediario($pagamentos);
 $saldoCrediarioAnterior = null;
 $saldoCrediarioPosterior = null;
@@ -731,78 +803,86 @@ if ($pedidoId && $depositoId) {
 /* =====================================================
    💰 2. LANÇAR CONTAS A RECEBER E BAIXAR AUTOMÁTICO
    ===================================================== */
-if ($pedidoId && !$temPagamentoBoleto) {
-    logMsg("💰 Lançando contas a receber para o pedido $pedidoId...");
+if ($pedidoId) {
+    if ($temPagamentoBoleto) {
+        logMsg("⏭️ Pagamento com boleto detectado. Lançamento do contas a receber será realizado posteriormente pela emissão da NF.");
+    } else {
+        logMsg("💰 Lançando contas a receber para o pedido $pedidoId...");
 
-    // 1️⃣ Lança o contas a receber
-    $resContas = bling_request('POST', "pedidos/vendas/{$pedidoId}/lancar-contas");
-    logMsg("Resp contas: HTTP {$resContas['http']}");
+        // 1️⃣ Lança o contas a receber
+        $resContas = bling_request('POST', "pedidos/vendas/{$pedidoId}/lancar-contas");
+        logMsg("Resp contas: HTTP {$resContas['http']}");
 
-    if ($resContas['http'] >= 200 && $resContas['http'] < 300) {
-        logMsg("✅ Contas a receber lançado com sucesso (pedido $pedidoId)");
+        if ($resContas['http'] >= 200 && $resContas['http'] < 300) {
+            logMsg("✅ Contas a receber lançado com sucesso (pedido $pedidoId)");
 
-        // 2️⃣ IDs das formas com baixa automática (Pix, Dinheiro, Crédito, Débito)
-        $formasBaixaAutoIds = [7697682, 2009802, 2941151, 2941150];
-        $baixar = false;
+            // 2️⃣ IDs das formas com baixa automática (Pix, Dinheiro, Crédito, Débito)
+            $formasBaixaAutoIds = [7697682, 2009802, 2941151, 2941150];
+            $baixar = false;
 
-        foreach ($pagamentos as $p) {
-            $idForma = (int)($p['id'] ?? 0);
-            if (in_array($idForma, $formasBaixaAutoIds)) {
-                $baixar = true;
-                break;
-            }
-        }
-
-        // 3️⃣ Baixa automática se aplicável
-        if ($baixar) {
-            logMsg("⚙️ Formas de pagamento com baixa automática detectadas. Aguardando geração das contas...");
-            sleep(2); // Aguarda o Bling criar as contas vinculadas
-
-            $dataInicial = date('Y-m-d', strtotime('-1 day'));
-            $dataFinal   = date('Y-m-d');
-            $resBusca = bling_request('GET', "contas/receber?dataEmissaoInicial={$dataInicial}&dataEmissaoFinal={$dataFinal}");
-            logMsg("Resp contas/receber: HTTP {$resBusca['http']}");
-
-            $jsonBusca = json_decode($resBusca['body'], true);
-            if (isset($jsonBusca['data']) && is_array($jsonBusca['data'])) {
-                $contaEncontrada = null;
-                foreach ($jsonBusca['data'] as $conta) {
-                    $tipoOrigem = strtolower($conta['origem']['tipoOrigem'] ?? $conta['origem']['tipo'] ?? '');
-                    $origemId   = (string)($conta['origem']['id'] ?? '');
-                    if ($tipoOrigem === 'venda' && $origemId === (string)$pedidoId) {
-                        $contaEncontrada = $conta;
-                        break;
-                    }
+            foreach ($pagamentos as $p) {
+                $idForma = (int)($p['id'] ?? 0);
+                if (in_array($idForma, $formasBaixaAutoIds)) {
+                    $baixar = true;
+                    break;
                 }
+            }
 
-                if ($contaEncontrada) {
-                    $contaId = $contaEncontrada['id'];
-                    $valorBaixa = $contaEncontrada['saldo'] ?? $contaEncontrada['valor'] ?? 0;
-                    logMsg("💾 Conta vinculada ao pedido encontrada: ID {$contaId}, valor R$ {$valorBaixa}");
+            // 3️⃣ Baixa automática se aplicável
+            if ($baixar) {
+                logMsg("⚙️ Formas de pagamento com baixa automática detectadas. Aguardando geração das contas...");
+                sleep(2); // Aguarda o Bling criar as contas vinculadas
 
-                    // 4️⃣ Faz a baixa da conta
-                    $resBaixa = bling_request('POST', "contas/receber/{$contaId}/baixar", [
-                        'data' => date('Y-m-d'),
-                        'valor' => $valorBaixa,
-                        'observacoes' => 'Baixa automática via PDV Carmania'
-                    ]);
+                $dataInicial = date('Y-m-d', strtotime('-1 day'));
+                $dataFinal   = date('Y-m-d');
+                $resBusca = bling_request('GET', "contas/receber?dataEmissaoInicial={$dataInicial}&dataEmissaoFinal={$dataFinal}");
+                logMsg("Resp contas/receber: HTTP {$resBusca['http']}");
 
-                    if ($resBaixa['http'] >= 200 && $resBaixa['http'] < 300) {
-                        logMsg("💸 Conta $contaId baixada com sucesso (R$ {$valorBaixa}).");
+                $jsonBusca = json_decode($resBusca['body'], true);
+                if (isset($jsonBusca['data']) && is_array($jsonBusca['data'])) {
+                    $contaEncontrada = null;
+                    foreach ($jsonBusca['data'] as $conta) {
+                        $tipoOrigem = strtolower($conta['origem']['tipoOrigem'] ?? $conta['origem']['tipo'] ?? '');
+                        $origemId   = (string)($conta['origem']['id'] ?? '');
+                        if ($tipoOrigem === 'venda' && $origemId === (string)$pedidoId) {
+                            $contaEncontrada = $conta;
+                            break;
+                        }
+                    }
+
+                    if ($contaEncontrada) {
+                        $contaId = $contaEncontrada['id'];
+                        $valorBaixa = $contaEncontrada['saldo'] ?? $contaEncontrada['valor'] ?? 0;
+                        logMsg("💾 Conta vinculada ao pedido encontrada: ID {$contaId}, valor R$ {$valorBaixa}");
+
+                        // 4️⃣ Faz a baixa da conta
+                        $resBaixa = bling_request('POST', "contas/receber/{$contaId}/baixar", [
+                            'data' => date('Y-m-d'),
+                            'valor' => $valorBaixa,
+                            'observacoes' => 'Baixa automática via PDV Carmania'
+                        ]);
+
+                        if ($resBaixa['http'] >= 200 && $resBaixa['http'] < 300) {
+                            logMsg("💸 Conta $contaId baixada com sucesso (R$ {$valorBaixa}).");
+                        } else {
+                            logMsg("⚠️ Falha ao baixar conta $contaId (HTTP {$resBaixa['http']}) -> {$resBaixa['body']}");
+                        }
                     } else {
-                        logMsg("⚠️ Falha ao baixar conta $contaId (HTTP {$resBaixa['http']}) -> {$resBaixa['body']}");
+                        logMsg("⚠️ Nenhuma conta vinculada ao pedido $pedidoId encontrada nas contas recentes.");
                     }
                 } else {
-                    logMsg("⚠️ Nenhuma conta vinculada ao pedido $pedidoId encontrada nas contas recentes.");
+                    logMsg("⚠️ Nenhuma conta retornada pelo endpoint /contas/receber. Body -> {$resBusca['body']}");
                 }
             } else {
-                logMsg("⚠️ Nenhuma conta retornada pelo endpoint /contas/receber. Body -> {$resBusca['body']}");
+                logMsg("ℹ️ Nenhuma forma de pagamento com baixa automática detectada.");
             }
         } else {
-            logMsg("ℹ️ Nenhuma forma de pagamento com baixa automática detectada.");
+            $bodyResposta = $resContas['body'];
+            if (strpos($bodyResposta, 'Nome do cliente está incompleto') !== false) {
+                logMsg('⚠️ Contas a receber não lançadas porque o nome do cliente está sem sobrenome no Bling. Ajuste o cadastro para evitar novas falhas.');
+            }
+            logMsg("❌ Falha ao lançar contas (HTTP {$resContas['http']}) -> {$resContas['body']}");
         }
-    } else {
-        logMsg("❌ Falha ao lançar contas (HTTP {$resContas['http']}) -> {$resContas['body']}");
     }
 }
 
@@ -836,10 +916,6 @@ if ($valorTotalDinheiroInformado > 0.01) {
     } else {
         logMsg('⚠️ Venda em dinheiro identificada, porém sem depósito válido para registrar no caixa.');
     }
-}
-
-if ($pedidoId && $temPagamentoBoleto) {
-    logMsg("⏭️ Pagamento com boleto detectado. Lançamento do contas a receber será realizado posteriormente pela emissão da NF.");
 }
 
 $nfeResultado = ['sucesso' => false];
