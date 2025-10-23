@@ -350,7 +350,6 @@ if (!isset($_SESSION['usuario'])) {
   }
 
   const campoBusca = document.getElementById('campoBusca');
-  let timeoutCodigoBarras = null;
 
   function normalizarCodigoBarras(valor) {
     const texto = String(valor ?? '').trim().toLowerCase();
@@ -388,19 +387,9 @@ if (!isset($_SESSION['usuario'])) {
     return false;
   }
 
-  function agendarVerificacaoCodigoBarras(termo) {
-    if (timeoutCodigoBarras) {
-      clearTimeout(timeoutCodigoBarras);
-    }
-    timeoutCodigoBarras = setTimeout(() => {
-      tentarAdicionarPorCodigoBarras(termo);
-    }, 200);
-  }
-
   campoBusca.addEventListener('input', e => {
     const termo = e.target.value;
     filtrarProdutos(termo);
-    agendarVerificacaoCodigoBarras(termo);
   });
 
   campoBusca.addEventListener('keydown', (event) => {
