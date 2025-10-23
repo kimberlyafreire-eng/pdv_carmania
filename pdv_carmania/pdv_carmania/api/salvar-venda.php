@@ -9,6 +9,7 @@ require_once __DIR__ . '/lib/caixa-helper.php';
 require_once __DIR__ . '/lib/vendas-helper.php';
 require_once __DIR__ . '/lib/crediario-helper.php';
 require_once __DIR__ . '/lib/recibo-helper.php';
+require_once __DIR__ . '/lib/clientes-db.php';
 
 $nfeConfigPath = __DIR__ . '/config/nfe-config.php';
 $nfeConfig = [];
@@ -256,6 +257,21 @@ function pagamentoEhBoleto(array $pagamento): bool
     return false;
 }
 
+function vendaPossuiBoleto(array $pagamentos): bool
+{
+    foreach ($pagamentos as $pagamento) {
+        if (!is_array($pagamento)) {
+            continue;
+        }
+
+        if (pagamentoEhBoleto($pagamento)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function ajustarNomeComSobrenome(string $nome): array
 {
     $nomeLimpo = trim($nome);
@@ -305,6 +321,53 @@ function limparCamposNulos(array $dados): array
     }
 
     return $resultado;
+}
+
+function sincronizarClienteLocalParaNfe(array $contato, array $dadosOriginais): void
+{
+    if (empty($contato['id']) || empty($contato['nome'])) {
+        return;
+    }
+
+    static $dbClientes = null;
+
+    try {
+        if (!$dbClientes instanceof SQLite3) {
+            $dbClientes = getClientesDb();
+        }
+    } catch (Throwable $e) {
+        logMsg('⚠️ Não foi possível abrir o banco local de clientes para sincronização da NF: ' . $e->getMessage());
+        return;
+    }
+
+    $registro = [
+        'id' => $contato['id'],
+        'nome' => $contato['nome'],
+        'tipoPessoa' => $dadosOriginais['tipoPessoa'] ?? ($dadosOriginais['tipo'] ?? null),
+        'numeroDocumento' => $contato['numeroDocumento'] ?? ($dadosOriginais['numeroDocumento']
+            ?? ($dadosOriginais['numeroDocumentoPrincipal'] ?? ($dadosOriginais['cpfCnpj'] ?? null))),
+        'documento' => $dadosOriginais['documento'] ?? null,
+        'codigo' => $dadosOriginais['codigo'] ?? null,
+        'celular' => $dadosOriginais['celular'] ?? ($dadosOriginais['celularTelefone'] ?? null),
+        'telefone' => $contato['telefone'] ?? ($dadosOriginais['telefone'] ?? ($dadosOriginais['fone'] ?? null)),
+        'endereco' => $contato['endereco']
+            ?? ($dadosOriginais['endereco'] ?? ($dadosOriginais['enderecoPrincipal'] ?? null)),
+    ];
+
+    if (empty($registro['endereco']) && !empty($dadosOriginais['enderecos']) && is_array($dadosOriginais['enderecos'])) {
+        foreach ($dadosOriginais['enderecos'] as $possivelEndereco) {
+            if (is_array($possivelEndereco)) {
+                $registro['endereco'] = $possivelEndereco;
+                break;
+            }
+        }
+    }
+
+    try {
+        upsertCliente($dbClientes, $registro);
+    } catch (Throwable $e) {
+        logMsg('⚠️ Falha ao sincronizar cliente localmente após consulta para NF: ' . $e->getMessage());
+    }
 }
 
 function obterContatoParaNfe(int $clienteId, string $clienteNome): array
@@ -387,7 +450,10 @@ function obterContatoParaNfe(int $clienteId, string $clienteNome): array
         }
     }
 
-    return limparCamposNulos($contato);
+    $contatoLimpo = limparCamposNulos($contato);
+    sincronizarClienteLocalParaNfe($contatoLimpo, $dadosContato);
+
+    return $contatoLimpo;
 }
 
 function obterDetalhesPedidoParaNfe(int $pedidoId): ?array
@@ -865,7 +931,12 @@ if ($valorTotalDinheiroInformado > 0.01) {
 }
 
 $nfeResultado = ['sucesso' => false];
-if ($pedidoId && $clienteId) {
+$vendaPossuiBoleto = vendaPossuiBoleto($pagamentos);
+if ($vendaPossuiBoleto) {
+    logMsg('🧾 Venda com boleto identificada. Iniciando processo de NF.');
+}
+
+if ($pedidoId && $clienteId && $vendaPossuiBoleto) {
     try {
         $nfeResultado = criarNotaFiscalAutomatica(
             (int) $pedidoId,
@@ -882,6 +953,8 @@ if ($pedidoId && $clienteId) {
         $nfeResultado['mensagem'] = 'Erro ao criar NF automaticamente.';
         logMsg('⚠️ Exceção ao criar NF automaticamente: ' . $e->getMessage());
     }
+} elseif ($pedidoId && $clienteId) {
+    logMsg('ℹ️ Venda sem boleto. Emissão automática de NF ignorada.');
 }
 
 /* =====================================================

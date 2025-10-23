@@ -38,12 +38,33 @@ function getClientesDb(): SQLite3
         telefone TEXT,
         codigo TEXT,
         rua TEXT,
+        numero TEXT,
         bairro TEXT,
         cidade TEXT,
         estado TEXT,
         cep TEXT,
         atualizado_em TEXT NOT NULL
     )');
+
+    try {
+        $resultadoInfo = $db->query('PRAGMA table_info(clientes)');
+        $colunas = [];
+        if ($resultadoInfo instanceof SQLite3Result) {
+            while ($linha = $resultadoInfo->fetchArray(SQLITE3_ASSOC)) {
+                if (!isset($linha['name'])) {
+                    continue;
+                }
+                $colunas[strtolower((string) $linha['name'])] = true;
+            }
+            $resultadoInfo->finalize();
+        }
+
+        if (!isset($colunas['numero'])) {
+            $db->exec('ALTER TABLE clientes ADD COLUMN numero TEXT');
+        }
+    } catch (Throwable $e) {
+        error_log('[clientes-db] Não foi possível garantir a coluna numero na tabela clientes: ' . $e->getMessage());
+    }
 
     $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome COLLATE NOCASE)');
 
@@ -59,9 +80,9 @@ function upsertCliente(SQLite3 $db, array $cliente): void
 
     if (!$stmt instanceof SQLite3Stmt) {
         $stmt = $db->prepare('INSERT INTO clientes (
-                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
+                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, numero, bairro, cidade, estado, cep, atualizado_em
             ) VALUES (
-                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :bairro, :cidade, :estado, :cep, :atualizado_em
+                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :numero, :bairro, :cidade, :estado, :cep, :atualizado_em
             )
             ON CONFLICT(id) DO UPDATE SET
                 nome = excluded.nome,
@@ -71,6 +92,7 @@ function upsertCliente(SQLite3 $db, array $cliente): void
                 telefone = excluded.telefone,
                 codigo = excluded.codigo,
                 rua = excluded.rua,
+                numero = excluded.numero,
                 bairro = excluded.bairro,
                 cidade = excluded.cidade,
                 estado = excluded.estado,
@@ -93,6 +115,7 @@ function upsertCliente(SQLite3 $db, array $cliente): void
     bindValorOuNulo($stmt, ':telefone', $dados['telefone']);
     bindValorOuNulo($stmt, ':codigo', $dados['codigo']);
     bindValorOuNulo($stmt, ':rua', $dados['rua']);
+    bindValorOuNulo($stmt, ':numero', $dados['numero']);
     bindValorOuNulo($stmt, ':bairro', $dados['bairro']);
     bindValorOuNulo($stmt, ':cidade', $dados['cidade']);
     bindValorOuNulo($stmt, ':estado', $dados['estado']);
@@ -250,6 +273,7 @@ function normalizarDadosCliente(array $cliente): array
 
     $endereco = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? []);
     $rua = isset($endereco['endereco']) ? trim((string) $endereco['endereco']) : null;
+    $numero = isset($endereco['numero']) ? trim((string) $endereco['numero']) : null;
     $bairro = isset($endereco['bairro']) ? trim((string) $endereco['bairro']) : null;
     $cidade = isset($endereco['municipio']) ? trim((string) $endereco['municipio']) : null;
     $estado = isset($endereco['uf']) ? strtoupper(trim((string) $endereco['uf'])) : null;
@@ -268,6 +292,7 @@ function normalizarDadosCliente(array $cliente): array
         'telefone' => $telefone,
         'codigo' => $codigo,
         'rua' => $rua,
+        'numero' => $numero,
         'bairro' => $bairro,
         'cidade' => $cidade,
         'estado' => $estado,
@@ -353,6 +378,11 @@ function normalizarClienteParaResposta(array $cliente): ?array
             $enderecoNormalizado['bairro'] = $bairro;
         }
 
+        $numero = isset($enderecoFonte['numero']) ? trim((string) $enderecoFonte['numero']) : '';
+        if ($numero !== '') {
+            $enderecoNormalizado['numero'] = $numero;
+        }
+
         $municipio = isset($enderecoFonte['municipio']) ? trim((string) $enderecoFonte['municipio']) : '';
         if ($municipio !== '') {
             $enderecoNormalizado['municipio'] = $municipio;
@@ -421,6 +451,7 @@ function montarEstruturaCliente(array $linha): array
 
     $endereco = array_filter([
         'endereco' => $linha['rua'] ?? null,
+        'numero' => $linha['numero'] ?? null,
         'bairro' => $linha['bairro'] ?? null,
         'municipio' => $linha['cidade'] ?? null,
         'uf' => $linha['estado'] ?? null,

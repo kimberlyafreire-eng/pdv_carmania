@@ -610,11 +610,13 @@ if ($usuarioLogado) {
 
       const enderecoBase = cliente?.endereco?.geral || cliente?.endereco || {};
       const rua = String(enderecoBase.endereco || '').trim();
+      const numero = String(enderecoBase.numero || '').trim();
       const municipio = String(enderecoBase.municipio || '').trim();
       const uf = String(enderecoBase.uf || '').trim();
       const cepDigitos = String(enderecoBase.cep || '').replace(/\D+/g, '');
 
       if (!rua) problemas.push('Informe o logradouro (rua/avenida) do cliente.');
+      if (!numero) problemas.push('Informe o número do endereço do cliente.');
       if (!municipio) problemas.push('Informe a cidade do cliente.');
       if (!uf || uf.length !== 2) problemas.push('Informe a UF do cliente.');
       if (cepDigitos.length !== 8) problemas.push('Informe o CEP completo (8 dígitos) do cliente.');
