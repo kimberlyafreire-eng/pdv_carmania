@@ -456,6 +456,24 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     let carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
     let clientesLista = [];
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
+
+    function atualizarClienteSelecionadoSeIncompleto() {
+      if (!clienteSelecionado || !clienteSelecionado.id) return;
+      const possuiDocumento = typeof clienteSelecionado.numeroDocumento === 'string' && clienteSelecionado.numeroDocumento.trim();
+      const enderecoGeral = clienteSelecionado?.endereco?.geral || clienteSelecionado?.endereco || null;
+      const possuiEnderecoBasico = enderecoGeral && typeof enderecoGeral === 'object'
+        && enderecoGeral.endereco && enderecoGeral.municipio && enderecoGeral.uf && enderecoGeral.cep;
+      if (possuiDocumento && possuiEnderecoBasico) {
+        return;
+      }
+
+      const encontrado = clientesLista.find((cli) => String(cli.id) === String(clienteSelecionado.id));
+      if (encontrado) {
+        clienteSelecionado = JSON.parse(JSON.stringify(encontrado));
+        localStorage.setItem("clienteSelecionado", JSON.stringify(clienteSelecionado));
+        atualizarBotaoCliente();
+      }
+    }
     let descontoValor = parseFloat(localStorage.getItem("descontoValor") || 0);
     let descontoPercentual = parseFloat(localStorage.getItem("descontoPercentual") || 0);
     const usuarioLogado = window.USUARIO_LOGADO || null;
@@ -599,6 +617,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
           const resultado = await buscarClientes(url);
           if (resultado.length) {
             clientesLista = resultado;
+            atualizarClienteSelecionadoSeIncompleto();
             return;
           }
         } catch (erro) {
@@ -645,7 +664,13 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     function confirmarCliente() {
       const input = document.getElementById("clienteBusca");
       if (!input.dataset.id) return alert("Selecione um cliente válido.");
-      clienteSelecionado = { id: input.dataset.id, nome: input.value };
+      const selecionadoId = String(input.dataset.id);
+      const encontrado = clientesLista.find((cli) => String(cli.id) === selecionadoId);
+      if (encontrado) {
+        clienteSelecionado = JSON.parse(JSON.stringify(encontrado));
+      } else {
+        clienteSelecionado = { id: selecionadoId, nome: input.value };
+      }
       localStorage.setItem("clienteSelecionado", JSON.stringify(clienteSelecionado));
       atualizarBotaoCliente();
       bootstrap.Modal.getInstance(document.getElementById("modalCliente")).hide();
