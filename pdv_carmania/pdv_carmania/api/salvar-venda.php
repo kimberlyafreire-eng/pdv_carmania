@@ -132,6 +132,62 @@ function bling_request($method, $path, $body = null) {
     return ['http' => $http, 'body' => $resp];
 }
 
+function extrairMensagemErroEstrutura($dados)
+{
+    if (is_string($dados)) {
+        $texto = trim($dados);
+        return $texto !== '' ? $texto : null;
+    }
+
+    if (!is_array($dados)) {
+        return null;
+    }
+
+    $chavesPrioritarias = ['mensagem', 'message', 'descricao', 'description', 'detail', 'erro', 'error'];
+    foreach ($chavesPrioritarias as $chave) {
+        if (!array_key_exists($chave, $dados)) {
+            continue;
+        }
+
+        $valor = $dados[$chave];
+        $mensagem = extrairMensagemErroEstrutura($valor);
+        if ($mensagem) {
+            return $mensagem;
+        }
+    }
+
+    foreach ($dados as $valor) {
+        $mensagem = extrairMensagemErroEstrutura($valor);
+        if ($mensagem) {
+            return $mensagem;
+        }
+    }
+
+    return null;
+}
+
+function extrairMensagemErroResposta(?string $body): ?string
+{
+    if ($body === null) {
+        return null;
+    }
+
+    $texto = trim($body);
+    if ($texto === '') {
+        return null;
+    }
+
+    $json = json_decode($body, true);
+    if (is_array($json)) {
+        $mensagem = extrairMensagemErroEstrutura($json);
+        if ($mensagem) {
+            return $mensagem;
+        }
+    }
+
+    return $texto;
+}
+
 function formaPagamentoEhDinheiroPorId($idValor): bool
 {
     if ($idValor === null) {
@@ -259,6 +315,9 @@ function obterContatoParaNfe(int $clienteId, string $clienteNome): array
     }
 
     $fallback = ['id' => $clienteId, 'nome' => $nomeFallback];
+    if ($fallbackAjustado) {
+        $fallback['__nomeIncompleto'] = true;
+    }
     $resContato = bling_request('GET', "contatos/{$clienteId}");
     if ($resContato['http'] < 200 || $resContato['http'] >= 300) {
         logMsg("⚠️ Falha ao obter contato {$clienteId} para NF (HTTP {$resContato['http']}) -> {$resContato['body']}");
@@ -289,6 +348,10 @@ function obterContatoParaNfe(int $clienteId, string $clienteNome): array
         'telefone' => $dadosContato['telefone'] ?? ($dadosContato['fone'] ?? null),
         'email' => $dadosContato['email'] ?? null,
     ];
+
+    if ($foiAjustado) {
+        $contato['__nomeIncompleto'] = true;
+    }
 
     $origensEndereco = [];
     if (isset($dadosContato['endereco']) && is_array($dadosContato['endereco'])) {
@@ -346,119 +409,6 @@ function obterDetalhesPedidoParaNfe(int $pedidoId): ?array
     return $dados;
 }
 
-function montarItensParaNfe(array $pedidoDados, array $carrinho): array
-{
-    $itens = [];
-    if (!empty($pedidoDados['itens']) && is_array($pedidoDados['itens'])) {
-        foreach ($pedidoDados['itens'] as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $itens[] = limparCamposNulos([
-                'codigo' => $item['codigo'] ?? null,
-                'descricao' => $item['descricao'] ?? null,
-                'unidade' => $item['unidade'] ?? 'UN',
-                'quantidade' => isset($item['quantidade']) ? (float) $item['quantidade'] : null,
-                'valor' => isset($item['valor']) ? round((float) $item['valor'], 2) : null,
-                'tipo' => strtoupper($item['tipo'] ?? 'P'),
-                'pesoBruto' => isset($item['pesoBruto']) ? (float) $item['pesoBruto'] : null,
-                'pesoLiquido' => isset($item['pesoLiquido']) ? (float) $item['pesoLiquido'] : null,
-                'numeroPedidoCompra' => $item['numeroPedidoCompra'] ?? null,
-                'classificacaoFiscal' => $item['classificacaoFiscal'] ?? null,
-                'cest' => $item['cest'] ?? null,
-                'codigoServico' => $item['codigoServico'] ?? null,
-                'origem' => isset($item['origem']) ? (int) $item['origem'] : null,
-                'informacoesAdicionais' => $item['informacoesAdicionais'] ?? null,
-            ]);
-        }
-    }
-
-    if (empty($itens)) {
-        foreach ($carrinho as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $quantidade = isset($item['quantidade']) ? (float) $item['quantidade'] : 0.0;
-            $valor = isset($item['preco']) ? round((float) $item['preco'], 2) : 0.0;
-            $descricao = $item['nome'] ?? ($item['descricao'] ?? null);
-
-            $itens[] = limparCamposNulos([
-                'codigo' => $item['codigo'] ?? null,
-                'descricao' => $descricao,
-                'unidade' => 'UN',
-                'quantidade' => $quantidade > 0 ? $quantidade : null,
-                'valor' => $valor > 0 ? $valor : null,
-                'tipo' => 'P',
-            ]);
-        }
-    }
-
-    return array_values(array_filter($itens));
-}
-
-function montarParcelasParaNfe(array $pedidoDados, array $pagamentos): array
-{
-    $parcelas = [];
-    if (!empty($pedidoDados['parcelas']) && is_array($pedidoDados['parcelas'])) {
-        foreach ($pedidoDados['parcelas'] as $parcela) {
-            if (!is_array($parcela)) {
-                continue;
-            }
-
-            $parcelas[] = limparCamposNulos([
-                'data' => $parcela['dataVencimento'] ?? null,
-                'valor' => isset($parcela['valor']) ? round((float) $parcela['valor'], 2) : null,
-                'observacoes' => $parcela['observacoes'] ?? null,
-                'caut' => $parcela['caut'] ?? null,
-                'formaPagamento' => isset($parcela['formaPagamento']['id']) ? ['id' => (int) $parcela['formaPagamento']['id']] : null,
-            ]);
-        }
-    }
-
-    if (empty($parcelas)) {
-        foreach ($pagamentos as $p) {
-            if (!is_array($p)) {
-                continue;
-            }
-            $valor = isset($p['valor']) ? round((float) $p['valor'], 2) : null;
-            if ($valor === null || $valor <= 0) {
-                continue;
-            }
-
-            $parcelas[] = limparCamposNulos([
-                'data' => date('Y-m-d'),
-                'valor' => $valor,
-                'observacoes' => 'Pagamento via PDV Carmania',
-                'formaPagamento' => isset($p['id']) ? ['id' => (int) $p['id']] : null,
-            ]);
-        }
-    }
-
-    return array_values(array_filter($parcelas));
-}
-
-function montarTransporteParaNfe(array $pedidoDados): array
-{
-    $transporte = $pedidoDados['transporte'] ?? null;
-    if (!is_array($transporte)) {
-        return [];
-    }
-
-    $payload = limparCamposNulos([
-        'fretePorConta' => $transporte['fretePorConta'] ?? null,
-        'frete' => isset($transporte['frete']) ? round((float) $transporte['frete'], 2) : null,
-        'veiculo' => isset($transporte['veiculo']) && is_array($transporte['veiculo']) ? limparCamposNulos($transporte['veiculo']) : null,
-        'transportador' => isset($transporte['transportador']) && is_array($transporte['transportador']) ? limparCamposNulos($transporte['transportador']) : null,
-        'volume' => isset($transporte['volume']) && is_array($transporte['volume']) ? limparCamposNulos($transporte['volume']) : null,
-        'volumes' => isset($transporte['volumes']) && is_array($transporte['volumes']) ? array_values(array_filter(array_map('limparCamposNulos', $transporte['volumes']))) : null,
-        'etiqueta' => isset($transporte['etiqueta']) && is_array($transporte['etiqueta']) ? limparCamposNulos($transporte['etiqueta']) : null,
-    ]);
-
-    return $payload;
-}
-
 function criarNotaFiscalAutomatica(
     int $pedidoId,
     int $clienteId,
@@ -483,123 +433,119 @@ function criarNotaFiscalAutomatica(
         return $resultado;
     }
 
-    $contato = obterContatoParaNfe($clienteId, $clienteNome);
-    $itens = montarItensParaNfe($pedidoDados, $carrinho);
-    if (empty($itens)) {
-        logMsg('⚠️ Nenhum item disponível para montar a NF.');
-        $resultado['mensagem'] = 'Nenhum item encontrado para a NF.';
+    if (!empty($pedidoDados['notaFiscal']['id'])) {
+        $notaFiscalId = (int) $pedidoDados['notaFiscal']['id'];
+        $notaFiscalNumero = $pedidoDados['notaFiscal']['numero'] ?? null;
+        logMsg("ℹ️ Pedido {$pedidoId} já possui NF vinculada (ID {$notaFiscalId}).");
+        $resultado['sucesso'] = true;
+        $resultado['id'] = $notaFiscalId;
+        if ($notaFiscalNumero) {
+            $resultado['numero'] = $notaFiscalNumero;
+        }
+        $resultado['mensagem'] = 'NF já estava vinculada ao pedido.';
         return $resultado;
     }
 
-    $parcelas = montarParcelasParaNfe($pedidoDados, $pagamentos);
-    $transporte = montarTransporteParaNfe($pedidoDados);
+    $contato = obterContatoParaNfe($clienteId, $clienteNome);
+    $nomeIncompleto = !empty($contato['__nomeIncompleto']);
+    unset($contato['__nomeIncompleto']);
+    if ($nomeIncompleto) {
+        $resultado['mensagem'] = 'Nome do cliente incompleto. Informe nome e sobrenome para emitir a NF.';
+        logMsg('⚠️ NF não gerada: nome do cliente está incompleto.');
+        return $resultado;
+    }
 
-    $observacoesPadrao = $config['observacoes_padrao'] ?? '';
-    $observacoesVenda = isset($pedidoDados['observacoes']) ? trim((string) $pedidoDados['observacoes']) : '';
-    $observacoes = trim($observacoesPadrao . ($observacoesPadrao && $observacoesVenda ? "\n" : '') . $observacoesVenda);
+    $documento = isset($contato['numeroDocumento']) ? preg_replace('/\D+/', '', (string) $contato['numeroDocumento']) : '';
+    if ($documento === '') {
+        $resultado['mensagem'] = 'CPF/CNPJ do cliente não informado. Atualize o cadastro para emitir a NF.';
+        logMsg('⚠️ NF não gerada: cliente sem CPF/CNPJ cadastrado.');
+        return $resultado;
+    }
+
+    $endereco = isset($contato['endereco']) && is_array($contato['endereco']) ? $contato['endereco'] : [];
+    $camposEnderecoObrigatorios = ['endereco', 'municipio', 'uf', 'cep'];
+    $faltantes = [];
+    foreach ($camposEnderecoObrigatorios as $campo) {
+        $valorCampo = isset($endereco[$campo]) ? trim((string) $endereco[$campo]) : '';
+        if ($valorCampo === '') {
+            $faltantes[] = $campo;
+        }
+    }
+    if ($faltantes) {
+        $resultado['mensagem'] = 'Endereço do cliente incompleto. Informe rua, cidade, UF e CEP para emitir a NF.';
+        logMsg('⚠️ NF não gerada: endereço do cliente incompleto (' . implode(', ', $faltantes) . ').');
+        return $resultado;
+    }
 
     $transmitirAutomaticamente = !empty($config['transmitir_automaticamente']);
     if ($transmitirAutomaticamente) {
-        logMsg('📤 Configuração habilitada: NF será transmitida automaticamente após a criação.');
+        logMsg('📤 NF será transmitida automaticamente após a geração pelo pedido.');
     } else {
-        logMsg('📝 NF criada somente como rascunho no Bling (sem transmissão automática).');
+        logMsg('📝 NF será criada como rascunho a partir do pedido de venda.');
     }
 
-    $payload = [
-        'tipo' => (int) ($config['tipo'] ?? 1),
-        'finalidade' => (int) ($config['finalidade'] ?? 1),
-        'dataOperacao' => date('Y-m-d H:i:s'),
-        'contato' => $contato,
-        'itens' => $itens,
-        'parcelas' => $parcelas ?: null,
-        'transporte' => $transporte ?: null,
-        'observacoes' => $observacoes !== '' ? $observacoes : null,
-        'venda' => ['id' => $pedidoId],
-        'transmitir' => $transmitirAutomaticamente,
-    ];
-
-    $naturezaId = $config['natureza_operacao_id'] ?? null;
-    if ($naturezaId) {
-        $payload['naturezaOperacao'] = ['id' => (int) $naturezaId];
-    }
-
-    $lojaId = null;
-    $lojaNumero = null;
-    if (isset($pedidoDados['loja']['id']) && (int) $pedidoDados['loja']['id'] > 0) {
-        $lojaId = (int) $pedidoDados['loja']['id'];
-        $lojaNumero = $pedidoDados['loja']['numero'] ?? null;
-    } elseif (!empty($config['loja_id'])) {
-        $lojaId = (int) $config['loja_id'];
-        $lojaNumero = $config['loja_numero'] ?? null;
-    }
-    if ($lojaId) {
-        $payload['loja'] = limparCamposNulos([
-            'id' => $lojaId,
-            'numero' => $lojaNumero,
-        ]);
-    }
-
-    if (!empty($config['numero_manual'])) {
-        $payload['numero'] = (string) $config['numero_manual'];
-    }
-
-    $valorTotalPedido = isset($pedidoDados['total']) ? round((float) $pedidoDados['total'], 2) : $totalFinal;
-    if ($valorTotalPedido > 0) {
-        $payload['valor'] = $valorTotalPedido;
-    }
-
-    $seguro = isset($pedidoDados['seguro']) ? (float) $pedidoDados['seguro'] : null;
-    if ($seguro && $seguro > 0) {
-        $payload['seguro'] = round($seguro, 2);
-    }
-
-    $despesas = isset($pedidoDados['despesas']) ? (float) $pedidoDados['despesas'] : null;
-    if ($despesas && $despesas > 0) {
-        $payload['despesas'] = round($despesas, 2);
-    }
-
-    $descontoPedido = null;
-    if (isset($pedidoDados['desconto']['valor'])) {
-        $descontoPedido = (float) $pedidoDados['desconto']['valor'];
-    } elseif ($descontoAplicado > 0) {
-        $descontoPedido = $descontoAplicado;
-    }
-    if ($descontoPedido && $descontoPedido > 0) {
-        $payload['desconto'] = round($descontoPedido, 2);
-    }
-
-    if (($config['incluir_documento_referenciado'] ?? true)) {
-        $payload['documentoReferenciado'] = limparCamposNulos([
-            'modelo' => $config['documento_modelo'] ?? '55',
-            'numero' => isset($pedidoDados['numero']) ? (string) $pedidoDados['numero'] : (string) $pedidoId,
-            'serie' => $config['documento_serie'] ?? '1',
-            'data' => date('ym'),
-            'contadorOrdemOperacao' => (string) $pedidoId,
-        ]);
-    }
-
+    $payload = ['transmitir' => $transmitirAutomaticamente];
     $payloadLimpo = limparCamposNulos($payload);
-    logMsg('📄 Payload NF -> ' . json_encode($payloadLimpo, JSON_UNESCAPED_UNICODE));
 
-    $resNfe = bling_request('POST', 'nfe', $payloadLimpo);
-    logMsg("🧾 Resultado NF HTTP {$resNfe['http']} -> {$resNfe['body']}");
+    $resNfe = bling_request('POST', "pedidos/vendas/{$pedidoId}/gerar-nfe", $payloadLimpo ?: null);
+    logMsg("🧾 Resultado geração NF via pedido HTTP {$resNfe['http']} -> {$resNfe['body']}");
 
     if ($resNfe['http'] < 200 || $resNfe['http'] >= 300) {
-        $resultado['mensagem'] = 'Falha ao criar NF no Bling.';
+        $resultado['mensagem'] = extrairMensagemErroResposta($resNfe['body']) ?? 'Falha ao gerar NF para o pedido.';
+        logMsg('⚠️ Falha ao gerar NF vinculada ao pedido: ' . $resultado['mensagem']);
         return $resultado;
     }
 
+    $nfeId = null;
+    $nfeNumero = null;
     $body = json_decode($resNfe['body'], true);
-    $nfeData = $body['data'] ?? null;
-    $nfeId = is_array($nfeData) ? ($nfeData['id'] ?? null) : null;
-    $nfeNumero = is_array($nfeData) ? ($nfeData['numero'] ?? null) : null;
+    if (is_array($body)) {
+        $data = $body['data'] ?? $body;
+        $estruturas = [];
+        if (isset($data['notaFiscal']) && is_array($data['notaFiscal'])) {
+            $estruturas[] = $data['notaFiscal'];
+        }
+        if (isset($data[0]) && is_array($data[0])) {
+            foreach ($data as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $estruturas[] = $item;
+                if (isset($item['notaFiscal']) && is_array($item['notaFiscal'])) {
+                    $estruturas[] = $item['notaFiscal'];
+                }
+            }
+        }
+        if (empty($estruturas) && is_array($data)) {
+            $estruturas[] = $data;
+        }
+
+        foreach ($estruturas as $estrutura) {
+            if (!is_array($estrutura)) {
+                continue;
+            }
+            if ($nfeId === null && isset($estrutura['id'])) {
+                $nfeId = $estrutura['id'];
+            }
+            if ($nfeNumero === null && isset($estrutura['numero'])) {
+                $nfeNumero = $estrutura['numero'];
+            }
+            if ($nfeId !== null && $nfeNumero !== null) {
+                break;
+            }
+        }
+    }
 
     $resultado['sucesso'] = true;
-    $resultado['id'] = $nfeId;
-    $resultado['numero'] = $nfeNumero;
-    $resultado['mensagem'] = 'NF criada com sucesso.';
+    if ($nfeId !== null) {
+        $resultado['id'] = $nfeId;
+    }
+    if ($nfeNumero !== null) {
+        $resultado['numero'] = $nfeNumero;
+    }
+    $resultado['mensagem'] = 'NF gerada a partir do pedido.';
 
-    logMsg("✅ NF criada automaticamente (ID: " . ($nfeId ?? 'n/d') . ", Número: " . ($nfeNumero ?? 'n/d') . ")");
+    logMsg('✅ NF gerada e vinculada ao pedido ' . $pedidoId . ' (ID: ' . ($nfeId ?? 'n/d') . ', Número: ' . ($nfeNumero ?? 'n/d') . ').');
 
     return $resultado;
 }
