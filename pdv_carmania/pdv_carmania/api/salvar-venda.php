@@ -10,6 +10,15 @@ require_once __DIR__ . '/lib/vendas-helper.php';
 require_once __DIR__ . '/lib/crediario-helper.php';
 require_once __DIR__ . '/lib/recibo-helper.php';
 
+$nfeConfigPath = __DIR__ . '/config/nfe-config.php';
+$nfeConfig = [];
+if (file_exists($nfeConfigPath)) {
+    $loadedNfeConfig = include $nfeConfigPath;
+    if (is_array($loadedNfeConfig)) {
+        $nfeConfig = $loadedNfeConfig;
+    }
+}
+
 // ⚙️ Caminhos e configs
 $logDir  = __DIR__ . '/../logs';
 $logFile = "$logDir/salvar-venda.log";
@@ -141,6 +150,398 @@ function pagamentoEhDinheiro(array $pagamento): bool
     return false;
 }
 
+function pagamentoEhBoleto(array $pagamento): bool
+{
+    $idValor = $pagamento['id'] ?? null;
+    if ($idValor !== null) {
+        $idString = trim((string) $idValor);
+        if ($idString !== '') {
+            $idInt = (int) $idString;
+            $idsBoleto = [7697681, 2941141, 7749678];
+            if (in_array($idInt, $idsBoleto, true)) {
+                return true;
+            }
+        }
+    }
+
+    $nome = strtolower(trim((string) ($pagamento['forma'] ?? $pagamento['nome'] ?? '')));
+    if ($nome !== '' && mb_stripos($nome, 'boleto') !== false) {
+        return true;
+    }
+
+    return false;
+}
+
+function limparCamposNulos(array $dados): array
+{
+    $resultado = [];
+    foreach ($dados as $chave => $valor) {
+        if ($valor === null) {
+            continue;
+        }
+
+        if (is_string($valor)) {
+            $valor = trim($valor);
+            if ($valor === '') {
+                continue;
+            }
+        }
+
+        if (is_array($valor)) {
+            $valor = limparCamposNulos($valor);
+            if (empty($valor)) {
+                continue;
+            }
+        }
+
+        $resultado[$chave] = $valor;
+    }
+
+    return $resultado;
+}
+
+function obterContatoParaNfe(int $clienteId, string $clienteNome): array
+{
+    $fallback = ['id' => $clienteId, 'nome' => $clienteNome];
+    $resContato = bling_request('GET', "contatos/{$clienteId}");
+    if ($resContato['http'] < 200 || $resContato['http'] >= 300) {
+        logMsg("⚠️ Falha ao obter contato {$clienteId} para NF (HTTP {$resContato['http']}) -> {$resContato['body']}");
+        return $fallback;
+    }
+
+    $json = json_decode($resContato['body'], true);
+    $dadosContato = $json['data'] ?? null;
+    if (!is_array($dadosContato)) {
+        logMsg("⚠️ Resposta inesperada ao carregar contato {$clienteId} para NF: {$resContato['body']}");
+        return $fallback;
+    }
+
+    $contato = [
+        'id' => (int) ($dadosContato['id'] ?? $clienteId),
+        'nome' => (string) ($dadosContato['nome'] ?? $clienteNome),
+        'tipoPessoa' => $dadosContato['tipoPessoa'] ?? ($dadosContato['tipo'] ?? null),
+        'numeroDocumento' => $dadosContato['numeroDocumento'] ?? ($dadosContato['numeroDocumentoPrincipal'] ?? ($dadosContato['cpfCnpj'] ?? null)),
+        'ie' => $dadosContato['ie'] ?? null,
+        'rg' => $dadosContato['rg'] ?? null,
+        'contribuinte' => isset($dadosContato['contribuinte']) ? (int) $dadosContato['contribuinte'] : null,
+        'telefone' => $dadosContato['telefone'] ?? ($dadosContato['fone'] ?? null),
+        'email' => $dadosContato['email'] ?? null,
+    ];
+
+    $origensEndereco = [];
+    if (isset($dadosContato['endereco']) && is_array($dadosContato['endereco'])) {
+        $origensEndereco[] = $dadosContato['endereco'];
+    }
+    if (isset($dadosContato['enderecoPrincipal']) && is_array($dadosContato['enderecoPrincipal'])) {
+        $origensEndereco[] = $dadosContato['enderecoPrincipal'];
+    }
+    if (!empty($dadosContato['enderecos']) && is_array($dadosContato['enderecos'])) {
+        foreach ($dadosContato['enderecos'] as $end) {
+            if (is_array($end)) {
+                $origensEndereco[] = $end;
+            }
+        }
+    }
+
+    foreach ($origensEndereco as $enderecoFonte) {
+        $endereco = [
+            'endereco' => $enderecoFonte['endereco'] ?? ($enderecoFonte['logradouro'] ?? null),
+            'numero' => $enderecoFonte['numero'] ?? null,
+            'complemento' => $enderecoFonte['complemento'] ?? null,
+            'bairro' => $enderecoFonte['bairro'] ?? null,
+            'cep' => $enderecoFonte['cep'] ?? null,
+            'municipio' => $enderecoFonte['municipio'] ?? ($enderecoFonte['cidade'] ?? null),
+            'uf' => $enderecoFonte['uf'] ?? ($enderecoFonte['estado'] ?? null),
+            'pais' => $enderecoFonte['pais'] ?? null,
+        ];
+
+        $enderecoLimpo = limparCamposNulos($endereco);
+        if (!empty($enderecoLimpo)) {
+            $contato['endereco'] = $enderecoLimpo;
+            break;
+        }
+    }
+
+    return limparCamposNulos($contato);
+}
+
+function obterDetalhesPedidoParaNfe(int $pedidoId): ?array
+{
+    $resPedido = bling_request('GET', "pedidos/vendas/{$pedidoId}");
+    logMsg("🔍 Consulta detalhes do pedido {$pedidoId} para NF -> HTTP {$resPedido['http']}");
+    if ($resPedido['http'] < 200 || $resPedido['http'] >= 300) {
+        logMsg("⚠️ Falha ao obter detalhes do pedido {$pedidoId} para NF: {$resPedido['body']}");
+        return null;
+    }
+
+    $json = json_decode($resPedido['body'], true);
+    $dados = $json['data'] ?? null;
+    if (!is_array($dados)) {
+        logMsg("⚠️ Resposta inesperada ao consultar pedido {$pedidoId} para NF: {$resPedido['body']}");
+        return null;
+    }
+
+    return $dados;
+}
+
+function montarItensParaNfe(array $pedidoDados, array $carrinho): array
+{
+    $itens = [];
+    if (!empty($pedidoDados['itens']) && is_array($pedidoDados['itens'])) {
+        foreach ($pedidoDados['itens'] as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $itens[] = limparCamposNulos([
+                'codigo' => $item['codigo'] ?? null,
+                'descricao' => $item['descricao'] ?? null,
+                'unidade' => $item['unidade'] ?? 'UN',
+                'quantidade' => isset($item['quantidade']) ? (float) $item['quantidade'] : null,
+                'valor' => isset($item['valor']) ? round((float) $item['valor'], 2) : null,
+                'tipo' => strtoupper($item['tipo'] ?? 'P'),
+                'pesoBruto' => isset($item['pesoBruto']) ? (float) $item['pesoBruto'] : null,
+                'pesoLiquido' => isset($item['pesoLiquido']) ? (float) $item['pesoLiquido'] : null,
+                'numeroPedidoCompra' => $item['numeroPedidoCompra'] ?? null,
+                'classificacaoFiscal' => $item['classificacaoFiscal'] ?? null,
+                'cest' => $item['cest'] ?? null,
+                'codigoServico' => $item['codigoServico'] ?? null,
+                'origem' => isset($item['origem']) ? (int) $item['origem'] : null,
+                'informacoesAdicionais' => $item['informacoesAdicionais'] ?? null,
+            ]);
+        }
+    }
+
+    if (empty($itens)) {
+        foreach ($carrinho as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $quantidade = isset($item['quantidade']) ? (float) $item['quantidade'] : 0.0;
+            $valor = isset($item['preco']) ? round((float) $item['preco'], 2) : 0.0;
+            $descricao = $item['nome'] ?? ($item['descricao'] ?? null);
+
+            $itens[] = limparCamposNulos([
+                'codigo' => $item['codigo'] ?? null,
+                'descricao' => $descricao,
+                'unidade' => 'UN',
+                'quantidade' => $quantidade > 0 ? $quantidade : null,
+                'valor' => $valor > 0 ? $valor : null,
+                'tipo' => 'P',
+            ]);
+        }
+    }
+
+    return array_values(array_filter($itens));
+}
+
+function montarParcelasParaNfe(array $pedidoDados, array $pagamentos): array
+{
+    $parcelas = [];
+    if (!empty($pedidoDados['parcelas']) && is_array($pedidoDados['parcelas'])) {
+        foreach ($pedidoDados['parcelas'] as $parcela) {
+            if (!is_array($parcela)) {
+                continue;
+            }
+
+            $parcelas[] = limparCamposNulos([
+                'data' => $parcela['dataVencimento'] ?? null,
+                'valor' => isset($parcela['valor']) ? round((float) $parcela['valor'], 2) : null,
+                'observacoes' => $parcela['observacoes'] ?? null,
+                'caut' => $parcela['caut'] ?? null,
+                'formaPagamento' => isset($parcela['formaPagamento']['id']) ? ['id' => (int) $parcela['formaPagamento']['id']] : null,
+            ]);
+        }
+    }
+
+    if (empty($parcelas)) {
+        foreach ($pagamentos as $p) {
+            if (!is_array($p)) {
+                continue;
+            }
+            $valor = isset($p['valor']) ? round((float) $p['valor'], 2) : null;
+            if ($valor === null || $valor <= 0) {
+                continue;
+            }
+
+            $parcelas[] = limparCamposNulos([
+                'data' => date('Y-m-d'),
+                'valor' => $valor,
+                'observacoes' => 'Pagamento via PDV Carmania',
+                'formaPagamento' => isset($p['id']) ? ['id' => (int) $p['id']] : null,
+            ]);
+        }
+    }
+
+    return array_values(array_filter($parcelas));
+}
+
+function montarTransporteParaNfe(array $pedidoDados): array
+{
+    $transporte = $pedidoDados['transporte'] ?? null;
+    if (!is_array($transporte)) {
+        return [];
+    }
+
+    $payload = limparCamposNulos([
+        'fretePorConta' => $transporte['fretePorConta'] ?? null,
+        'frete' => isset($transporte['frete']) ? round((float) $transporte['frete'], 2) : null,
+        'veiculo' => isset($transporte['veiculo']) && is_array($transporte['veiculo']) ? limparCamposNulos($transporte['veiculo']) : null,
+        'transportador' => isset($transporte['transportador']) && is_array($transporte['transportador']) ? limparCamposNulos($transporte['transportador']) : null,
+        'volume' => isset($transporte['volume']) && is_array($transporte['volume']) ? limparCamposNulos($transporte['volume']) : null,
+        'volumes' => isset($transporte['volumes']) && is_array($transporte['volumes']) ? array_values(array_filter(array_map('limparCamposNulos', $transporte['volumes']))) : null,
+        'etiqueta' => isset($transporte['etiqueta']) && is_array($transporte['etiqueta']) ? limparCamposNulos($transporte['etiqueta']) : null,
+    ]);
+
+    return $payload;
+}
+
+function criarNotaFiscalAutomatica(
+    int $pedidoId,
+    int $clienteId,
+    string $clienteNome,
+    array $pagamentos,
+    array $carrinho,
+    float $totalFinal,
+    float $descontoAplicado,
+    array $config
+): array {
+    $resultado = ['sucesso' => false];
+
+    if (!($config['habilitado'] ?? true)) {
+        logMsg('ℹ️ Emissão automática de NF está desabilitada na configuração.');
+        $resultado['mensagem'] = 'Emissão automática desabilitada.';
+        return $resultado;
+    }
+
+    $pedidoDados = obterDetalhesPedidoParaNfe($pedidoId);
+    if (!$pedidoDados) {
+        $resultado['mensagem'] = 'Não foi possível obter os dados do pedido no Bling.';
+        return $resultado;
+    }
+
+    $contato = obterContatoParaNfe($clienteId, $clienteNome);
+    $itens = montarItensParaNfe($pedidoDados, $carrinho);
+    if (empty($itens)) {
+        logMsg('⚠️ Nenhum item disponível para montar a NF.');
+        $resultado['mensagem'] = 'Nenhum item encontrado para a NF.';
+        return $resultado;
+    }
+
+    $parcelas = montarParcelasParaNfe($pedidoDados, $pagamentos);
+    $transporte = montarTransporteParaNfe($pedidoDados);
+
+    $observacoesPadrao = $config['observacoes_padrao'] ?? '';
+    $observacoesVenda = isset($pedidoDados['observacoes']) ? trim((string) $pedidoDados['observacoes']) : '';
+    $observacoes = trim($observacoesPadrao . ($observacoesPadrao && $observacoesVenda ? "\n" : '') . $observacoesVenda);
+
+    $transmitirAutomaticamente = !empty($config['transmitir_automaticamente']);
+    if ($transmitirAutomaticamente) {
+        logMsg('📤 Configuração habilitada: NF será transmitida automaticamente após a criação.');
+    } else {
+        logMsg('📝 NF criada somente como rascunho no Bling (sem transmissão automática).');
+    }
+
+    $payload = [
+        'tipo' => (int) ($config['tipo'] ?? 1),
+        'finalidade' => (int) ($config['finalidade'] ?? 1),
+        'dataOperacao' => date('Y-m-d H:i:s'),
+        'contato' => $contato,
+        'itens' => $itens,
+        'parcelas' => $parcelas ?: null,
+        'transporte' => $transporte ?: null,
+        'observacoes' => $observacoes !== '' ? $observacoes : null,
+        'venda' => ['id' => $pedidoId],
+        'transmitir' => $transmitirAutomaticamente,
+    ];
+
+    $naturezaId = $config['natureza_operacao_id'] ?? null;
+    if ($naturezaId) {
+        $payload['naturezaOperacao'] = ['id' => (int) $naturezaId];
+    }
+
+    $lojaId = null;
+    $lojaNumero = null;
+    if (isset($pedidoDados['loja']['id']) && (int) $pedidoDados['loja']['id'] > 0) {
+        $lojaId = (int) $pedidoDados['loja']['id'];
+        $lojaNumero = $pedidoDados['loja']['numero'] ?? null;
+    } elseif (!empty($config['loja_id'])) {
+        $lojaId = (int) $config['loja_id'];
+        $lojaNumero = $config['loja_numero'] ?? null;
+    }
+    if ($lojaId) {
+        $payload['loja'] = limparCamposNulos([
+            'id' => $lojaId,
+            'numero' => $lojaNumero,
+        ]);
+    }
+
+    if (!empty($config['numero_manual'])) {
+        $payload['numero'] = (string) $config['numero_manual'];
+    }
+
+    $valorTotalPedido = isset($pedidoDados['total']) ? round((float) $pedidoDados['total'], 2) : $totalFinal;
+    if ($valorTotalPedido > 0) {
+        $payload['valor'] = $valorTotalPedido;
+    }
+
+    $seguro = isset($pedidoDados['seguro']) ? (float) $pedidoDados['seguro'] : null;
+    if ($seguro && $seguro > 0) {
+        $payload['seguro'] = round($seguro, 2);
+    }
+
+    $despesas = isset($pedidoDados['despesas']) ? (float) $pedidoDados['despesas'] : null;
+    if ($despesas && $despesas > 0) {
+        $payload['despesas'] = round($despesas, 2);
+    }
+
+    $descontoPedido = null;
+    if (isset($pedidoDados['desconto']['valor'])) {
+        $descontoPedido = (float) $pedidoDados['desconto']['valor'];
+    } elseif ($descontoAplicado > 0) {
+        $descontoPedido = $descontoAplicado;
+    }
+    if ($descontoPedido && $descontoPedido > 0) {
+        $payload['desconto'] = round($descontoPedido, 2);
+    }
+
+    if (($config['incluir_documento_referenciado'] ?? true)) {
+        $payload['documentoReferenciado'] = limparCamposNulos([
+            'modelo' => $config['documento_modelo'] ?? '55',
+            'numero' => isset($pedidoDados['numero']) ? (string) $pedidoDados['numero'] : (string) $pedidoId,
+            'serie' => $config['documento_serie'] ?? '1',
+            'data' => date('ym'),
+            'contadorOrdemOperacao' => (string) $pedidoId,
+        ]);
+    }
+
+    $payloadLimpo = limparCamposNulos($payload);
+    logMsg('📄 Payload NF -> ' . json_encode($payloadLimpo, JSON_UNESCAPED_UNICODE));
+
+    $resNfe = bling_request('POST', 'nfe', $payloadLimpo);
+    logMsg("🧾 Resultado NF HTTP {$resNfe['http']} -> {$resNfe['body']}");
+
+    if ($resNfe['http'] < 200 || $resNfe['http'] >= 300) {
+        $resultado['mensagem'] = 'Falha ao criar NF no Bling.';
+        return $resultado;
+    }
+
+    $body = json_decode($resNfe['body'], true);
+    $nfeData = $body['data'] ?? null;
+    $nfeId = is_array($nfeData) ? ($nfeData['id'] ?? null) : null;
+    $nfeNumero = is_array($nfeData) ? ($nfeData['numero'] ?? null) : null;
+
+    $resultado['sucesso'] = true;
+    $resultado['id'] = $nfeId;
+    $resultado['numero'] = $nfeNumero;
+    $resultado['mensagem'] = 'NF criada com sucesso.';
+
+    logMsg("✅ NF criada automaticamente (ID: " . ($nfeId ?? 'n/d') . ", Número: " . ($nfeNumero ?? 'n/d') . ")");
+
+    return $resultado;
+}
+
 // 💰 Cálculo dos totais
 $totalBruto = 0;
 foreach ($carrinho as $it) {
@@ -250,6 +651,14 @@ if (!empty($pagamentos)) {
     exit;
 }
 
+$temPagamentoBoleto = false;
+foreach ($pagamentos as $p) {
+    if (pagamentoEhBoleto($p)) {
+        $temPagamentoBoleto = true;
+        break;
+    }
+}
+
 [$isCrediario, $valorCrediarioGerado] = analisarPagamentosCrediario($pagamentos);
 $saldoCrediarioAnterior = null;
 $saldoCrediarioPosterior = null;
@@ -322,7 +731,7 @@ if ($pedidoId && $depositoId) {
 /* =====================================================
    💰 2. LANÇAR CONTAS A RECEBER E BAIXAR AUTOMÁTICO
    ===================================================== */
-if ($pedidoId) {
+if ($pedidoId && !$temPagamentoBoleto) {
     logMsg("💰 Lançando contas a receber para o pedido $pedidoId...");
 
     // 1️⃣ Lança o contas a receber
@@ -426,6 +835,30 @@ if ($valorTotalDinheiroInformado > 0.01) {
         }
     } else {
         logMsg('⚠️ Venda em dinheiro identificada, porém sem depósito válido para registrar no caixa.');
+    }
+}
+
+if ($pedidoId && $temPagamentoBoleto) {
+    logMsg("⏭️ Pagamento com boleto detectado. Lançamento do contas a receber será realizado posteriormente pela emissão da NF.");
+}
+
+$nfeResultado = ['sucesso' => false];
+if ($pedidoId && $clienteId) {
+    try {
+        $nfeResultado = criarNotaFiscalAutomatica(
+            (int) $pedidoId,
+            (int) $clienteId,
+            (string) $clienteNome,
+            $pagamentos,
+            $carrinho,
+            $totalFinal,
+            $descontoAplicado,
+            $nfeConfig
+        );
+    } catch (Throwable $e) {
+        $nfeResultado['sucesso'] = false;
+        $nfeResultado['mensagem'] = 'Erro ao criar NF automaticamente.';
+        logMsg('⚠️ Exceção ao criar NF automaticamente: ' . $e->getMessage());
     }
 }
 
@@ -586,8 +1019,21 @@ $reciboHtml = gerarReciboHtml([
     'dataHoraVenda' => $dataHoraVenda,
 ]);
 
-echo json_encode([
-    'ok'=>true,
-    'pedidoId'=>$pedidoId,
-    'reciboHtml'=>$reciboHtml
-], JSON_UNESCAPED_UNICODE);
+$responsePayload = [
+    'ok' => true,
+    'pedidoId' => $pedidoId,
+    'reciboHtml' => $reciboHtml,
+];
+
+if (!empty($nfeResultado['sucesso'])) {
+    if (!empty($nfeResultado['id'])) {
+        $responsePayload['nfeId'] = $nfeResultado['id'];
+    }
+    if (!empty($nfeResultado['numero'])) {
+        $responsePayload['nfeNumero'] = $nfeResultado['numero'];
+    }
+} elseif (!empty($nfeResultado['mensagem'])) {
+    $responsePayload['nfeErro'] = $nfeResultado['mensagem'];
+}
+
+echo json_encode($responsePayload, JSON_UNESCAPED_UNICODE);
