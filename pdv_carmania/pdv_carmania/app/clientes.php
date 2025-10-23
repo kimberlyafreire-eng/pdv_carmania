@@ -156,9 +156,14 @@ if (!isset($_SESSION['usuario'])) {
             <input type="tel" class="form-control" id="telefone" name="telefone" placeholder="(00) 3000-0000" maxlength="20" />
           </div>
 
-          <div class="col-12">
+          <div class="col-12 col-md-8">
             <label for="endereco" class="form-label">Rua</label>
-            <input type="text" class="form-control" id="endereco" name="endereco" placeholder="Rua, número e complemento" maxlength="150" />
+            <input type="text" class="form-control" id="endereco" name="endereco" placeholder="Rua" maxlength="150" />
+          </div>
+
+          <div class="col-12 col-md-4">
+            <label for="numero" class="form-label">Número</label>
+            <input type="text" class="form-control" id="numero" name="numero" placeholder="Número" maxlength="20" />
           </div>
 
           <div class="col-12 col-md-6">
@@ -179,6 +184,13 @@ if (!isset($_SESSION['usuario'])) {
           <div class="col-12 col-md-4">
             <label for="cep" class="form-label">CEP</label>
             <input type="text" class="form-control" id="cep" name="cep" maxlength="10" placeholder="00000-000" />
+          </div>
+
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch" id="permiteBoleto" name="permiteBoleto" />
+              <label class="form-check-label" for="permiteBoleto">Permitir pagamento com boleto</label>
+            </div>
           </div>
 
           <div class="col-12 col-md-4 align-self-end">
@@ -209,10 +221,12 @@ if (!isset($_SESSION['usuario'])) {
     const celularInput = document.getElementById('celular');
     const telefoneInput = document.getElementById('telefone');
     const enderecoInput = document.getElementById('endereco');
+    const numeroInput = document.getElementById('numero');
     const bairroInput = document.getElementById('bairro');
     const cidadeInput = document.getElementById('cidade');
     const estadoInput = document.getElementById('estado');
     const cepInput = document.getElementById('cep');
+    const permiteBoletoInput = document.getElementById('permiteBoleto');
 
     const SALDO_CACHE_KEY = 'clientesSaldoCrediario';
     const MAX_CONCORRENCIA_SALDOS = 3;
@@ -493,10 +507,13 @@ if (!isset($_SESSION['usuario'])) {
 
       const endereco = cliente?.endereco?.geral || {};
       enderecoInput.value = endereco.endereco || '';
+      numeroInput.value = endereco.numero || cliente?.numero || '';
       bairroInput.value = endereco.bairro || '';
       cidadeInput.value = endereco.municipio || '';
       estadoInput.value = endereco.uf || '';
       cepInput.value = endereco.cep || '';
+      const permiteBoletoValor = cliente?.permiteBoleto ?? cliente?.permite_boleto ?? false;
+      permiteBoletoInput.checked = Boolean(permiteBoletoValor);
 
       mostrarFormulario('editar');
     }
@@ -508,6 +525,8 @@ if (!isset($_SESSION['usuario'])) {
       tipoPessoaSelect.value = 'F';
       tipoPessoaSelect.setCustomValidity('');
       documentoInput.value = '';
+      numeroInput.value = '';
+      permiteBoletoInput.checked = false;
       formCliente.classList.remove('was-validated');
     }
 
@@ -774,10 +793,12 @@ if (!isset($_SESSION['usuario'])) {
         celular: celularInput.value.trim(),
         telefone: telefoneInput.value.trim(),
         endereco: enderecoInput.value.trim(),
+        numero: numeroInput.value.trim(),
         bairro: bairroInput.value.trim(),
         cidade: cidadeInput.value.trim(),
         estado: estadoInput.value.trim(),
         cep: formatarDocumento(cepInput.value),
+        permiteBoleto: !!permiteBoletoInput.checked,
       };
 
       try {

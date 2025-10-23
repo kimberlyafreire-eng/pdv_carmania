@@ -610,11 +610,15 @@ if ($usuarioLogado) {
 
       const enderecoBase = cliente?.endereco?.geral || cliente?.endereco || {};
       const rua = String(enderecoBase.endereco || '').trim();
+      const numeroEndereco = String(enderecoBase.numero || cliente?.numero || '').trim();
+      const bairro = String(enderecoBase.bairro || '').trim();
       const municipio = String(enderecoBase.municipio || '').trim();
       const uf = String(enderecoBase.uf || '').trim();
       const cepDigitos = String(enderecoBase.cep || '').replace(/\D+/g, '');
 
       if (!rua) problemas.push('Informe o logradouro (rua/avenida) do cliente.');
+      if (!numeroEndereco) problemas.push('Informe o número do endereço do cliente.');
+      if (!bairro) problemas.push('Informe o bairro do cliente.');
       if (!municipio) problemas.push('Informe a cidade do cliente.');
       if (!uf || uf.length !== 2) problemas.push('Informe a UF do cliente.');
       if (cepDigitos.length !== 8) problemas.push('Informe o CEP completo (8 dígitos) do cliente.');
@@ -628,6 +632,11 @@ if ($usuarioLogado) {
 
       const possuiBoleto = pagamentos.some((p) => isBoleto(p));
       if (possuiBoleto) {
+        const permiteBoleto = Boolean(clienteSelecionado?.permiteBoleto ?? clienteSelecionado?.permite_boleto ?? false);
+        if (!permiteBoleto) {
+          alert('Este cliente não está autorizado a pagar com boleto. Ajuste o cadastro do cliente para permitir esta forma.');
+          return;
+        }
         const pendencias = validarDadosClienteParaBoleto(clienteSelecionado);
         if (pendencias.length) {
           alert('Não é possível concluir a venda com boleto. Ajuste o cadastro do cliente:\n' + pendencias.map((p) => `- ${p}`).join('\n'));

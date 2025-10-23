@@ -567,6 +567,19 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
           existente.endereco = cliente.endereco;
         }
 
+        const numeroEndereco = cliente.numero
+          ?? (cliente.endereco && cliente.endereco.geral && cliente.endereco.geral.numero)
+          ?? (cliente.endereco && cliente.endereco.numero);
+        if (numeroEndereco !== undefined && numeroEndereco !== null && String(numeroEndereco).trim()) {
+          existente.numero = String(numeroEndereco).trim();
+        }
+
+        if (typeof cliente.permiteBoleto === 'boolean') {
+          existente.permiteBoleto = cliente.permiteBoleto;
+        } else if (cliente.permite_boleto !== undefined) {
+          existente.permiteBoleto = Boolean(cliente.permite_boleto);
+        }
+
         mapa.set(id, existente);
       });
 

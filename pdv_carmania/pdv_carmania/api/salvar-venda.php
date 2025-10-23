@@ -9,6 +9,7 @@ require_once __DIR__ . '/lib/caixa-helper.php';
 require_once __DIR__ . '/lib/vendas-helper.php';
 require_once __DIR__ . '/lib/crediario-helper.php';
 require_once __DIR__ . '/lib/recibo-helper.php';
+require_once __DIR__ . '/lib/clientes-db.php';
 
 $nfeConfigPath = __DIR__ . '/config/nfe-config.php';
 $nfeConfig = [];
@@ -305,6 +306,124 @@ function limparCamposNulos(array $dados): array
     }
 
     return $resultado;
+}
+
+function extrairDadosValidacaoBoleto(array $dados): array
+{
+    $documento = $dados['numero_documento'] ?? $dados['numeroDocumento'] ?? ($dados['documento'] ?? null);
+
+    $endereco = $dados['endereco']['geral'] ?? ($dados['endereco'] ?? []);
+    $rua = $dados['rua'] ?? ($endereco['endereco'] ?? null);
+    $numero = $dados['numero'] ?? ($endereco['numero'] ?? null);
+    $bairro = $dados['bairro'] ?? ($endereco['bairro'] ?? null);
+    $cidade = $dados['cidade'] ?? ($endereco['municipio'] ?? null);
+    $estado = $dados['estado'] ?? ($endereco['uf'] ?? null);
+    $cep = $dados['cep'] ?? ($endereco['cep'] ?? null);
+
+    return [
+        'documento' => $documento,
+        'rua' => $rua,
+        'numero' => $numero,
+        'bairro' => $bairro,
+        'cidade' => $cidade,
+        'estado' => $estado,
+        'cep' => $cep,
+    ];
+}
+
+function atualizarDadosValidacaoBoleto(array $base, array $novos): array
+{
+    $mapa = [
+        'numero_documento' => 'documento',
+        'documento' => 'documento',
+        'rua' => 'rua',
+        'numero' => 'numero',
+        'bairro' => 'bairro',
+        'cidade' => 'cidade',
+        'estado' => 'estado',
+        'cep' => 'cep',
+    ];
+
+    foreach ($mapa as $origem => $destino) {
+        if (!array_key_exists($origem, $novos)) {
+            continue;
+        }
+
+        $valor = $novos[$origem];
+        if ($valor === null) {
+            continue;
+        }
+
+        if (is_string($valor)) {
+            $valor = trim($valor);
+            if ($valor === '') {
+                continue;
+            }
+        }
+
+        $base[$destino] = $valor;
+    }
+
+    return $base;
+}
+
+function validarCamposObrigatoriosBoleto(array $dados): array
+{
+    $pendencias = [];
+
+    $documento = isset($dados['documento']) ? preg_replace('/\D+/', '', (string) $dados['documento']) : '';
+    if ($documento === '' || !in_array(strlen($documento), [11, 14], true)) {
+        $pendencias[] = 'Informe o CPF ou CNPJ completo do cliente.';
+    }
+
+    $rua = isset($dados['rua']) ? trim((string) $dados['rua']) : '';
+    if ($rua === '') {
+        $pendencias[] = 'Informe o logradouro (rua/avenida) do cliente.';
+    }
+
+    $numero = isset($dados['numero']) ? trim((string) $dados['numero']) : '';
+    if ($numero === '') {
+        $pendencias[] = 'Informe o número do endereço do cliente.';
+    }
+
+    $bairro = isset($dados['bairro']) ? trim((string) $dados['bairro']) : '';
+    if ($bairro === '') {
+        $pendencias[] = 'Informe o bairro do cliente.';
+    }
+
+    $cidade = isset($dados['cidade']) ? trim((string) $dados['cidade']) : '';
+    if ($cidade === '') {
+        $pendencias[] = 'Informe a cidade do cliente.';
+    }
+
+    $estado = isset($dados['estado']) ? strtoupper(trim((string) $dados['estado'])) : '';
+    if ($estado === '' || strlen($estado) !== 2) {
+        $pendencias[] = 'Informe a UF do cliente.';
+    }
+
+    $cep = isset($dados['cep']) ? preg_replace('/\D+/', '', (string) $dados['cep']) : '';
+    if (strlen($cep) !== 8) {
+        $pendencias[] = 'Informe o CEP completo (8 dígitos) do cliente.';
+    }
+
+    return $pendencias;
+}
+
+function carregarContatoDetalhadoBling(int $clienteId): ?array
+{
+    $resposta = bling_request('GET', "contatos/{$clienteId}");
+    if ($resposta['http'] < 200 || $resposta['http'] >= 300) {
+        logMsg("⚠️ Falha ao carregar contato {$clienteId} no Bling: HTTP {$resposta['http']} -> {$resposta['body']}");
+        return null;
+    }
+
+    $json = json_decode($resposta['body'], true);
+    if (!is_array($json) || !isset($json['data']) || !is_array($json['data'])) {
+        logMsg("⚠️ Resposta inesperada ao carregar contato {$clienteId}: {$resposta['body']}");
+        return null;
+    }
+
+    return $json['data'];
 }
 
 function obterContatoParaNfe(int $clienteId, string $clienteNome): array
@@ -674,6 +793,69 @@ if (!$temPagamentoBoleto && !empty($parcelas)) {
             $temPagamentoBoleto = true;
             break;
         }
+    }
+}
+
+if ($temPagamentoBoleto) {
+    $clienteIdStr = $clienteId !== null ? trim((string) $clienteId) : '';
+    if ($clienteIdStr === '') {
+        echo json_encode(['ok' => false, 'erro' => 'Cliente inválido para pagamento com boleto.']);
+        exit;
+    }
+
+    $dbClientes = null;
+    try {
+        $dbClientes = getClientesDb();
+    } catch (Throwable $e) {
+        logMsg('❌ Falha ao abrir banco local de clientes para validação de boleto: ' . $e->getMessage());
+    }
+
+    if (!$dbClientes instanceof SQLite3) {
+        echo json_encode(['ok' => false, 'erro' => 'Não é possível concluir a venda com boleto no momento.']);
+        exit;
+    }
+
+    $clienteLocal = buscarClienteLocalBruto($dbClientes, $clienteIdStr);
+    $permiteBoletoLocal = false;
+    if (is_array($clienteLocal)) {
+        $permiteBoletoLocal = ((int)($clienteLocal['permite_boleto'] ?? 0)) !== 0;
+    }
+
+    if (!$permiteBoletoLocal) {
+        $dbClientes->close();
+        echo json_encode(['ok' => false, 'erro' => 'Este cliente não está autorizado a pagar com boleto. Ajuste o cadastro antes de prosseguir.']);
+        exit;
+    }
+
+    $dadosValidacao = extrairDadosValidacaoBoleto($clienteLocal ?? []);
+    $pendenciasBoleto = validarCamposObrigatoriosBoleto($dadosValidacao);
+
+    if (!empty($pendenciasBoleto)) {
+        $contatoBling = carregarContatoDetalhadoBling((int) $clienteIdStr);
+        if ($contatoBling !== null) {
+            $contatoBling['id'] = $contatoBling['id'] ?? (int) $clienteIdStr;
+            $contatoBling['permiteBoleto'] = $permiteBoletoLocal ? 1 : 0;
+            $normalizadoContato = normalizarDadosCliente($contatoBling);
+            $dadosValidacao = atualizarDadosValidacaoBoleto($dadosValidacao, $normalizadoContato);
+
+            try {
+                $contatoParaPersistir = $contatoBling;
+                $contatoParaPersistir['permiteBoleto'] = $permiteBoletoLocal ? 1 : 0;
+                upsertCliente($dbClientes, $contatoParaPersistir);
+            } catch (Throwable $e) {
+                logMsg('⚠️ Falha ao atualizar dados do cliente após consulta ao Bling: ' . $e->getMessage());
+            }
+        }
+
+        $pendenciasBoleto = validarCamposObrigatoriosBoleto($dadosValidacao);
+    }
+
+    $dbClientes->close();
+
+    if (!empty($pendenciasBoleto)) {
+        $mensagemPendencias = 'Não é possível concluir a venda com boleto. Ajuste o cadastro do cliente:\n- ' . implode("\n- ", $pendenciasBoleto);
+        echo json_encode(['ok' => false, 'erro' => $mensagemPendencias, 'pendencias' => $pendenciasBoleto]);
+        exit;
     }
 }
 

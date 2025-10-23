@@ -33,6 +33,16 @@ if ($tipoPessoaEntrada !== '') {
 }
 $documento = preg_replace('/\D+/', '', $dadosEntrada['documento'] ?? '');
 $celular = trim($dadosEntrada['celular'] ?? '');
+$permiteBoletoBruto = $dadosEntrada['permiteBoleto'] ?? ($dadosEntrada['permite_boleto'] ?? null);
+$permiteBoletoFiltro = filter_var($permiteBoletoBruto, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+if ($permiteBoletoFiltro === null) {
+    if ($permiteBoletoBruto === null || $permiteBoletoBruto === '') {
+        $permiteBoletoFiltro = false;
+    } else {
+        $permiteBoletoFiltro = !in_array($permiteBoletoBruto, [0, '0', 'false', 'FALSE', false], true);
+    }
+}
+$permiteBoletoValor = $permiteBoletoFiltro ? 1 : 0;
 
 if ($nome === '') {
     $erros[] = 'Nome completo é obrigatório.';
@@ -87,6 +97,10 @@ $endereco = [];
 $rua = trim($dadosEntrada['endereco'] ?? '');
 if ($rua !== '') {
     $endereco['endereco'] = $rua;
+}
+$numeroEndereco = trim($dadosEntrada['numero'] ?? '');
+if ($numeroEndereco !== '') {
+    $endereco['numero'] = $numeroEndereco;
 }
 $bairro = trim($dadosEntrada['bairro'] ?? '');
 if ($bairro !== '') {
@@ -179,9 +193,25 @@ if ($httpCode < 200 || $httpCode >= 300) {
 $clienteAtualizado = $dadosResposta['data'] ?? null;
 $clienteNormalizado = null;
 
+if (is_array($clienteAtualizado)) {
+    $clienteAtualizado['permiteBoleto'] = $permiteBoletoValor;
+    if ($numeroEndereco !== '') {
+        $clienteAtualizado['numero'] = $numeroEndereco;
+    }
+}
+
 // Atualiza o cache local de clientes quando possível.
 if (is_array($clienteAtualizado)) {
     $clienteNormalizado = normalizarClienteParaResposta($clienteAtualizado);
+    if (is_array($clienteNormalizado)) {
+        $clienteNormalizado['permiteBoleto'] = $permiteBoletoValor === 1;
+        if ($numeroEndereco !== '') {
+            if (!isset($clienteNormalizado['endereco']['geral']) || !is_array($clienteNormalizado['endereco']['geral'])) {
+                $clienteNormalizado['endereco']['geral'] = [];
+            }
+            $clienteNormalizado['endereco']['geral']['numero'] = $numeroEndereco;
+        }
+    }
     $cacheClientes = __DIR__ . '/../cache/clientes-cache.json';
     $clientes = ['data' => []];
 
@@ -272,7 +302,12 @@ if (is_array($clienteAtualizado)) {
 
     try {
         $db = getClientesDb();
-        upsertCliente($db, $clienteAtualizado);
+        $clienteAtualizadoLocal = $clienteAtualizado;
+        if ($numeroEndereco !== '' && is_array($clienteAtualizadoLocal)) {
+            $clienteAtualizadoLocal['numero'] = $numeroEndereco;
+        }
+        $clienteAtualizadoLocal['permiteBoleto'] = $permiteBoletoValor;
+        upsertCliente($db, $clienteAtualizadoLocal);
         $db->close();
     } catch (Throwable $e) {
         error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
