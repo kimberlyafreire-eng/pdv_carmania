@@ -356,6 +356,7 @@ if ($usuarioLogado) {
           <h5>Selecione a forma de pagamento</h5>
           <div class="formas-grid">
             <button class="forma-card" type="button" onclick="selecionarForma('Pix', 7697682)">Pix</button>
+            <button class="forma-card" type="button" onclick="selecionarForma('Boleto', 7697681)">Boleto</button>
             <button class="forma-card" type="button" onclick="selecionarForma('Crédito', 2941151)">Crédito</button>
             <button class="forma-card" type="button" onclick="selecionarForma('Débito', 2941150)">Débito</button>
             <button class="forma-card" type="button" onclick="selecionarForma('Crediário', 8126949)">Crediário</button>
