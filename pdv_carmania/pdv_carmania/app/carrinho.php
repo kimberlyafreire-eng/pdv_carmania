@@ -506,27 +506,48 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    let carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
-    if (!Array.isArray(carrinho)) {
-      carrinho = [];
-    } else {
-      carrinho = carrinho.map((item) => {
-        if (!item || typeof item !== 'object') return item;
-
+    function normalizarCarrinho(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw.map((entrada) => {
+        const item = (entrada && typeof entrada === 'object') ? { ...entrada } : {};
         const precoOriginalBruto = Number(item.precoOriginal);
         const precoAtualBruto = Number(item.preco);
-        const precoOriginalValido = Number.isFinite(precoOriginalBruto) ? precoOriginalBruto : (Number.isFinite(precoAtualBruto) ? precoAtualBruto : 0);
+        const precoOriginalValido = Number.isFinite(precoOriginalBruto) && precoOriginalBruto >= 0
+          ? precoOriginalBruto
+          : (Number.isFinite(precoAtualBruto) && precoAtualBruto >= 0 ? precoAtualBruto : 0);
         const precoAtualValido = Number.isFinite(precoAtualBruto) && precoAtualBruto >= precoOriginalValido
           ? precoAtualBruto
           : precoOriginalValido;
+        const quantidadeBruta = Number(item.quantidade);
+        const quantidadeValida = Number.isFinite(quantidadeBruta) && quantidadeBruta > 0
+          ? quantidadeBruta
+          : 1;
 
         return {
           ...item,
+          quantidade: quantidadeValida,
           precoOriginal: precoOriginalValido,
           preco: precoAtualValido,
         };
       });
     }
+
+    function obterCarrinhoInicial() {
+      const armazenado = localStorage.getItem("carrinho");
+      if (!armazenado) {
+        return [];
+      }
+      try {
+        return normalizarCarrinho(JSON.parse(armazenado));
+      } catch (erro) {
+        console.warn('Carrinho salvo inválido. Limpando armazenamento.', erro);
+        localStorage.removeItem("carrinho");
+        return [];
+      }
+    }
+
+    let carrinho = obterCarrinhoInicial();
+    salvarCarrinho();
     let clientesLista = [];
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
     const CLIENTES_CACHE_KEY = "clientesListaCache";
@@ -1063,8 +1084,20 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     // ========================
     // ======= CARRINHO =======
     // ========================
+    function obterPrecoValido(item) {
+      const precoOriginal = Number(item?.precoOriginal);
+      const precoMinimo = Number.isFinite(precoOriginal) && precoOriginal >= 0 ? precoOriginal : 0;
+      const precoAtual = Number(item?.preco);
+      return Number.isFinite(precoAtual) && precoAtual >= precoMinimo ? precoAtual : precoMinimo;
+    }
+
+    function obterQuantidadeValida(item) {
+      const quantidade = Number(item?.quantidade);
+      return Number.isFinite(quantidade) && quantidade > 0 ? quantidade : 1;
+    }
+
     function totalCarrinho() {
-      return carrinho.reduce((s, it) => s + (Number(it.preco) * Number(it.quantidade)), 0);
+      return carrinho.reduce((soma, it) => soma + (obterPrecoValido(it) * obterQuantidadeValida(it)), 0);
     }
 
     function renderizarCarrinho() {
@@ -1078,10 +1111,11 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
       let total = 0;
       carrinho.forEach((item, i) => {
-        const precoMinimo = Number.isFinite(Number(item.precoOriginal)) ? Number(item.precoOriginal) : 0;
-        const precoAtual = Number(item.preco);
-        const preco = Number.isFinite(precoAtual) ? precoAtual : precoMinimo;
-        const qtd = Number(item.quantidade) || 0;
+        const precoMinimo = Number.isFinite(Number(item.precoOriginal)) && Number(item.precoOriginal) >= 0
+          ? Number(item.precoOriginal)
+          : 0;
+        const preco = obterPrecoValido(item);
+        const qtd = obterQuantidadeValida(item);
         const subtotal = preco * qtd;
         total += subtotal;
         const subtotalFormatado = subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1142,7 +1176,12 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     }
 
     function salvarCarrinho() {
-      localStorage.setItem("carrinho", JSON.stringify(carrinho));
+      carrinho = normalizarCarrinho(carrinho);
+      try {
+        localStorage.setItem("carrinho", JSON.stringify(carrinho));
+      } catch (erro) {
+        console.warn('Não foi possível salvar o carrinho.', erro);
+      }
     }
 
     function atualizarTotal(total) {
@@ -1157,8 +1196,11 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
     function verificarEstoqueAntesVenda() {
       for (const item of carrinho) {
-        if ((item.disponivel ?? 0) < item.quantidade) {
-          alert(`❌ Estoque insuficiente para "${item.nome}". Disponível: ${item.disponivel}`);
+        const quantidade = obterQuantidadeValida(item);
+        const disponivel = Number(item?.disponivel);
+        const estoqueDisponivel = Number.isFinite(disponivel) ? disponivel : 0;
+        if (estoqueDisponivel < quantidade) {
+          alert(`❌ Estoque insuficiente para "${item.nome}". Disponível: ${estoqueDisponivel}`);
           return false;
         }
       }
