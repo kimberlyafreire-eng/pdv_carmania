@@ -169,9 +169,23 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       margin-right: 0.25rem;
     }
 
-    .quantidade-input,
-    .preco-input {
+    .produto-controles .controle {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .quantidade-input {
       width: 92px;
+    }
+
+    .controle-preco {
+      white-space: nowrap;
+    }
+
+    .valor-unitario {
+      font-weight: 600;
+      color: #212529;
     }
 
     .subtotal-label {
@@ -206,8 +220,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     }
 
     @media (max-width: 992px) {
-      .quantidade-input,
-      .preco-input {
+      .quantidade-input {
         width: 80px;
       }
     }
@@ -290,18 +303,21 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       }
 
       .produto-controles {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
       }
 
       .produto-controles label {
         margin-right: 0;
       }
 
-      .quantidade-input,
-      .preco-input {
-        width: 100%;
+      .quantidade-input {
+        width: 72px;
+      }
+
+      .controle-preco {
+        flex: 0 1 auto;
       }
 
       .produto-controles .btn-sm-full {
@@ -885,30 +901,28 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         const qtd = Number(item.quantidade) || 0;
         const subtotal = preco * qtd;
         total += subtotal;
+        const precoFormatado = preco.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const subtotalFormatado = subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const div = document.createElement("div");
         div.className = "produto-item";
         div.innerHTML = `
           <div><strong>${item.nome}</strong></div>
           <div class="text-muted small">Estoque: ${item.disponivel ?? 0}</div>
           <div class="produto-controles">
-            <label class="mb-0">Qtd:</label>
-            <input type="number" inputmode="numeric" min="1" value="${qtd}" onchange="atualizarQuantidade(${i}, this.value)" class="form-control form-control-sm quantidade-input">
-            <label class="mb-0">Valor:</label>
-            <input type="number" inputmode="decimal" min="0" step="0.01" value="${preco.toFixed(2)}" onchange="atualizarPreco(${i}, this.value)" class="form-control form-control-sm preco-input">
-            <span class="subtotal-label">Subtotal: R$ ${(subtotal).toFixed(2)}</span>
+            <div class="controle controle-quantidade">
+              <label class="mb-0">Qtd:</label>
+              <input type="number" inputmode="numeric" min="1" value="${qtd}" onchange="atualizarQuantidade(${i}, this.value)" class="form-control form-control-sm quantidade-input">
+            </div>
+            <div class="controle controle-preco">
+              <label class="mb-0">Valor:</label>
+              <span class="valor-unitario">R$ ${precoFormatado}</span>
+            </div>
+            <span class="subtotal-label">Subtotal: R$ ${subtotalFormatado}</span>
             <button class="btn btn-outline-danger btn-sm btn-sm-full" onclick="removerProduto(${i})">Remover</button>
           </div>`;
         container.appendChild(div);
       });
       atualizarTotal(total);
-    }
-
-    function atualizarPreco(i, valor) {
-      const novoValor = parseFloat(valor);
-      if (isNaN(novoValor) || novoValor < 0) return;
-      carrinho[i].preco = novoValor;
-      salvarCarrinho();
-      renderizarCarrinho();
     }
 
     function atualizarQuantidade(i, valor) {
