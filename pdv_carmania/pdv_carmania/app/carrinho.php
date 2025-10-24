@@ -509,6 +509,12 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     let carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
     let clientesLista = [];
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
+    const CLIENTES_CACHE_KEY = "clientesListaCache";
+    const CLIENTES_CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutos
+    const CLIENTES_CACHE_REFRESH_INTERVAL_MS = 1000 * 60 * 2; // força atualização em segundo plano após 2 minutos
+    let clientesCarregandoPromise = null;
+    let clientesCacheExpirado = false;
+    let clientesCacheUltimaAtualizacao = 0;
 
     function atualizarClienteSelecionadoSeIncompleto() {
       if (!clienteSelecionado || !clienteSelecionado.id) return;
@@ -526,6 +532,55 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         localStorage.setItem("clienteSelecionado", JSON.stringify(clienteSelecionado));
         atualizarBotaoCliente();
       }
+    }
+
+    function lerClientesCacheLocal() {
+      const bruto = localStorage.getItem(CLIENTES_CACHE_KEY);
+      if (!bruto) return null;
+      try {
+        const cache = JSON.parse(bruto);
+        if (!cache || !Array.isArray(cache.lista) || cache.lista.length === 0) {
+          return null;
+        }
+        const atualizadoEm = typeof cache.atualizadoEm === 'number' ? cache.atualizadoEm : 0;
+        cache.atualizadoEm = atualizadoEm;
+        cache.expirado = atualizadoEm > 0 && (Date.now() - atualizadoEm) > CLIENTES_CACHE_TTL_MS;
+        return cache;
+      } catch (erro) {
+        console.warn('Cache local de clientes inválido. Limpando.', erro);
+        localStorage.removeItem(CLIENTES_CACHE_KEY);
+        return null;
+      }
+    }
+
+    function salvarClientesCacheLocal(lista) {
+      try {
+        const payload = { lista, atualizadoEm: Date.now() };
+        localStorage.setItem(CLIENTES_CACHE_KEY, JSON.stringify(payload));
+      } catch (erro) {
+        console.warn('Não foi possível salvar o cache local de clientes.', erro);
+      }
+    }
+
+    function aplicarClientesCacheLocalSeDisponivel({ permitirExpirado = false } = {}) {
+      const cache = lerClientesCacheLocal();
+      if (!cache) return false;
+      if (!permitirExpirado && cache.expirado) {
+        return false;
+      }
+      clientesLista = cache.lista;
+      clientesCacheExpirado = !!cache.expirado;
+      clientesCacheUltimaAtualizacao = cache.atualizadoEm || 0;
+      atualizarClienteSelecionadoSeIncompleto();
+      return true;
+    }
+
+    aplicarClientesCacheLocalSeDisponivel({ permitirExpirado: true });
+
+    function precisaAtualizarClientesRapido() {
+      if (clientesCacheExpirado) return true;
+      if (!clientesCacheUltimaAtualizacao) return true;
+      return (Date.now() - clientesCacheUltimaAtualizacao) > CLIENTES_CACHE_REFRESH_INTERVAL_MS;
     }
     let descontoValor = parseFloat(localStorage.getItem("descontoValor") || 0);
     let descontoPercentual = parseFloat(localStorage.getItem("descontoPercentual") || 0);
@@ -626,8 +681,8 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       return Array.from(mapa.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
     }
 
-    async function buscarClientes(url) {
-      const resposta = await fetch(url, { cache: 'no-store' });
+    async function buscarClientes(url, cacheMode = 'no-store') {
+      const resposta = await fetch(url, { cache: cacheMode });
       if (!resposta.ok) {
         throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
       }
@@ -658,38 +713,107 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       return sanitizarClientes(listaBruta);
     }
 
-    async function carregarClientes() {
-      const fontes = [
-        `../api/clientes.php?nocache=${Date.now()}`,
-        `../cache/clientes-cache.json?nocache=${Date.now()}`,
-      ];
-
-      for (let i = 0; i < fontes.length; i += 1) {
-        const url = fontes[i];
-        try {
-          const resultado = await buscarClientes(url);
-          if (resultado.length) {
-            clientesLista = resultado;
-            atualizarClienteSelecionadoSeIncompleto();
-            return;
+    async function carregarClientes({ forcarAtualizacao = false } = {}) {
+      if (!forcarAtualizacao) {
+        if (clientesLista.length > 0 && !clientesCacheExpirado) {
+          return clientesLista;
+        }
+        if (clientesLista.length === 0 && aplicarClientesCacheLocalSeDisponivel()) {
+          if (!clientesCacheExpirado) {
+            return clientesLista;
           }
-        } catch (erro) {
-          console.warn(`Falha ao ler clientes de ${url}`, erro);
+        }
+        if (clientesCarregandoPromise) {
+          return clientesCarregandoPromise;
         }
       }
 
-      clientesLista = [];
+      const listaAnterior = Array.isArray(clientesLista) ? [...clientesLista] : [];
+      const cacheExpiradoAnterior = clientesCacheExpirado;
+      const ultimaAtualizacaoAnterior = clientesCacheUltimaAtualizacao;
+
+      const fontes = [
+        { url: `../api/clientes.php?nocache=${Date.now()}`, cache: 'no-store' },
+        { url: '../cache/clientes-cache.json', cache: 'default' },
+      ];
+
+      clientesCarregandoPromise = (async () => {
+        for (let i = 0; i < fontes.length; i += 1) {
+          const { url, cache } = fontes[i];
+          try {
+            const resultado = await buscarClientes(url, cache);
+            if (resultado.length) {
+              clientesLista = resultado;
+              clientesCacheExpirado = false;
+              clientesCacheUltimaAtualizacao = Date.now();
+              salvarClientesCacheLocal(resultado);
+              atualizarClienteSelecionadoSeIncompleto();
+              return resultado;
+            }
+          } catch (erro) {
+            console.warn(`Falha ao ler clientes de ${url}`, erro);
+          }
+        }
+
+        if (listaAnterior.length) {
+          clientesLista = listaAnterior;
+          clientesCacheExpirado = cacheExpiradoAnterior;
+          clientesCacheUltimaAtualizacao = ultimaAtualizacaoAnterior;
+          return clientesLista;
+        }
+
+        if (aplicarClientesCacheLocalSeDisponivel({ permitirExpirado: true })) {
+          return clientesLista;
+        }
+
+        clientesLista = [];
+        clientesCacheExpirado = false;
+        return clientesLista;
+      })();
+
+      try {
+        return await clientesCarregandoPromise;
+      } finally {
+        clientesCarregandoPromise = null;
+      }
     }
 
-    carregarClientes();
+    const deveForcarAtualizacaoInicial = precisaAtualizarClientesRapido();
+    carregarClientes(deveForcarAtualizacaoInicial ? { forcarAtualizacao: true } : {});
 
     function abrirModalCliente() {
       const input = document.getElementById("clienteBusca");
+      const lista = document.getElementById("listaClientes");
       input.value = "";
       delete input.dataset.id;
-      document.getElementById("listaClientes").innerHTML = "";
-      carregarClientes();
-      new bootstrap.Modal(document.getElementById("modalCliente")).show();
+      lista.innerHTML = "";
+
+      const modalElemento = document.getElementById("modalCliente");
+      const modal = new bootstrap.Modal(modalElemento);
+      modal.show();
+
+      const promessaAtualizacao = carregarClientes({ forcarAtualizacao: true })
+        .catch((erro) => {
+          console.warn('Não foi possível atualizar a lista de clientes imediatamente.', erro);
+          return [];
+        });
+
+      if (!clientesLista.length) {
+        lista.innerHTML = "<div class='text-center text-muted py-2'>Carregando clientes...</div>";
+        promessaAtualizacao.then(() => {
+          if (!clientesLista.length) {
+            lista.innerHTML = "<div class='alert alert-warning mb-0'>Nenhum cliente cadastrado encontrado.</div>";
+          } else if (lista.innerHTML.includes('Carregando clientes')) {
+            lista.innerHTML = "";
+          }
+        });
+      } else {
+        promessaAtualizacao.then(() => {
+          if (input.value && input.value.length >= 2) {
+            input.dispatchEvent(new Event("input"));
+          }
+        });
+      }
     }
 
     document.addEventListener("input", (e) => {
