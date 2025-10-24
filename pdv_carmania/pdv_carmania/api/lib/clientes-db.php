@@ -38,16 +38,53 @@ function getClientesDb(): SQLite3
         telefone TEXT,
         codigo TEXT,
         rua TEXT,
+        numero TEXT,
         bairro TEXT,
         cidade TEXT,
         estado TEXT,
         cep TEXT,
+        permite_boleto INTEGER NOT NULL DEFAULT 0,
         atualizado_em TEXT NOT NULL
     )');
 
     $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome COLLATE NOCASE)');
 
+    ensureClientesSchema($db);
+
     return $db;
+}
+
+/**
+ * Garante que a tabela de clientes possui todas as colunas necessárias.
+ */
+function ensureClientesSchema(SQLite3 $db): void
+{
+    $colunas = [];
+    $resultado = $db->query('PRAGMA table_info(clientes)');
+    if ($resultado instanceof SQLite3Result) {
+        while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+            if (!is_array($linha) || !isset($linha['name'])) {
+                continue;
+            }
+            $colunas[$linha['name']] = true;
+        }
+        $resultado->finalize();
+    }
+
+    if (!isset($colunas['numero'])) {
+        $ok = $db->exec('ALTER TABLE clientes ADD COLUMN numero TEXT');
+        if ($ok === false) {
+            throw new RuntimeException('Não foi possível adicionar a coluna numero na tabela de clientes.');
+        }
+    }
+
+    if (!isset($colunas['permite_boleto'])) {
+        $ok = $db->exec('ALTER TABLE clientes ADD COLUMN permite_boleto INTEGER NOT NULL DEFAULT 0');
+        if ($ok === false) {
+            throw new RuntimeException('Não foi possível adicionar a coluna permite_boleto na tabela de clientes.');
+        }
+        $db->exec('UPDATE clientes SET permite_boleto = 0 WHERE permite_boleto IS NULL');
+    }
 }
 
 /**
@@ -55,57 +92,114 @@ function getClientesDb(): SQLite3
  */
 function upsertCliente(SQLite3 $db, array $cliente): void
 {
-    static $stmt = null;
-
-    if (!$stmt instanceof SQLite3Stmt) {
-        $stmt = $db->prepare('INSERT INTO clientes (
-                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
-            ) VALUES (
-                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :bairro, :cidade, :estado, :cep, :atualizado_em
-            )
-            ON CONFLICT(id) DO UPDATE SET
-                nome = excluded.nome,
-                tipo = excluded.tipo,
-                numero_documento = excluded.numero_documento,
-                celular = excluded.celular,
-                telefone = excluded.telefone,
-                codigo = excluded.codigo,
-                rua = excluded.rua,
-                bairro = excluded.bairro,
-                cidade = excluded.cidade,
-                estado = excluded.estado,
-                cep = excluded.cep,
-                atualizado_em = excluded.atualizado_em');
-        if (!$stmt instanceof SQLite3Stmt) {
-            $mensagemErro = trim($db->lastErrorMsg() ?: '');
-            $stmt = null;
-            throw new RuntimeException('Não foi possível preparar a instrução de gravação de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
-        }
-    }
+    static $stmtInsert = null;
+    static $stmtUpdate = null;
 
     $dados = normalizarDadosCliente($cliente);
 
-    bindValorOuNulo($stmt, ':id', $dados['id']);
-    bindValorOuNulo($stmt, ':nome', $dados['nome']);
-    bindValorOuNulo($stmt, ':tipo', $dados['tipo']);
-    bindValorOuNulo($stmt, ':numero_documento', $dados['numero_documento']);
-    bindValorOuNulo($stmt, ':celular', $dados['celular']);
-    bindValorOuNulo($stmt, ':telefone', $dados['telefone']);
-    bindValorOuNulo($stmt, ':codigo', $dados['codigo']);
-    bindValorOuNulo($stmt, ':rua', $dados['rua']);
-    bindValorOuNulo($stmt, ':bairro', $dados['bairro']);
-    bindValorOuNulo($stmt, ':cidade', $dados['cidade']);
-    bindValorOuNulo($stmt, ':estado', $dados['estado']);
-    bindValorOuNulo($stmt, ':cep', $dados['cep']);
-    bindValorOuNulo($stmt, ':atualizado_em', $dados['atualizado_em']);
-
-    $resultado = $stmt->execute();
-    if ($resultado === false) {
-        throw new RuntimeException('Falha ao gravar cliente no banco local.');
+    if (!isset($dados['id']) || $dados['id'] === null || $dados['id'] === '') {
+        return;
     }
-    $resultado->finalize();
-    $stmt->reset();
-    $stmt->clear();
+
+    $registroAtual = buscarClienteLocalBruto($db, (string) $dados['id']);
+
+    if (!array_key_exists('permite_boleto', $dados) || $dados['permite_boleto'] === null) {
+        if (is_array($registroAtual) && array_key_exists('permite_boleto', $registroAtual)) {
+            $permiteAtual = normalizarValorBooleano($registroAtual['permite_boleto']);
+            $dados['permite_boleto'] = $permiteAtual ?? 0;
+        } else {
+            $dados['permite_boleto'] = 0;
+        }
+    }
+
+    if (is_array($registroAtual)) {
+        if (!$stmtUpdate instanceof SQLite3Stmt) {
+            $stmtUpdate = $db->prepare('UPDATE clientes SET
+                    nome = :nome,
+                    tipo = :tipo,
+                    numero_documento = :numero_documento,
+                    celular = :celular,
+                    telefone = :telefone,
+                    codigo = :codigo,
+                    rua = :rua,
+                    numero = :numero,
+                    bairro = :bairro,
+                    cidade = :cidade,
+                    estado = :estado,
+                    cep = :cep,
+                    permite_boleto = :permite_boleto,
+                    atualizado_em = :atualizado_em
+                WHERE id = :id');
+            if (!$stmtUpdate instanceof SQLite3Stmt) {
+                $mensagemErro = trim($db->lastErrorMsg() ?: '');
+                $stmtUpdate = null;
+                throw new RuntimeException('Não foi possível preparar a instrução de atualização de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
+            }
+        }
+
+        bindValorOuNulo($stmtUpdate, ':nome', $dados['nome']);
+        bindValorOuNulo($stmtUpdate, ':tipo', $dados['tipo']);
+        bindValorOuNulo($stmtUpdate, ':numero_documento', $dados['numero_documento']);
+        bindValorOuNulo($stmtUpdate, ':celular', $dados['celular']);
+        bindValorOuNulo($stmtUpdate, ':telefone', $dados['telefone']);
+        bindValorOuNulo($stmtUpdate, ':codigo', $dados['codigo']);
+        bindValorOuNulo($stmtUpdate, ':rua', $dados['rua']);
+        bindValorOuNulo($stmtUpdate, ':numero', $dados['numero']);
+        bindValorOuNulo($stmtUpdate, ':bairro', $dados['bairro']);
+        bindValorOuNulo($stmtUpdate, ':cidade', $dados['cidade']);
+        bindValorOuNulo($stmtUpdate, ':estado', $dados['estado']);
+        bindValorOuNulo($stmtUpdate, ':cep', $dados['cep']);
+        bindInteiroOuNulo($stmtUpdate, ':permite_boleto', $dados['permite_boleto']);
+        bindValorOuNulo($stmtUpdate, ':atualizado_em', $dados['atualizado_em']);
+        bindValorOuNulo($stmtUpdate, ':id', $dados['id']);
+
+        $resultado = $stmtUpdate->execute();
+        if ($resultado === false) {
+            throw new RuntimeException('Falha ao atualizar cliente no banco local.');
+        }
+        if ($resultado instanceof SQLite3Result) {
+            $resultado->finalize();
+        }
+        $stmtUpdate->reset();
+    } else {
+        if (!$stmtInsert instanceof SQLite3Stmt) {
+            $stmtInsert = $db->prepare('INSERT INTO clientes (
+                    id, nome, tipo, numero_documento, celular, telefone, codigo, rua, numero, bairro, cidade, estado, cep, permite_boleto, atualizado_em
+                ) VALUES (
+                    :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :numero, :bairro, :cidade, :estado, :cep, :permite_boleto, :atualizado_em
+                )');
+            if (!$stmtInsert instanceof SQLite3Stmt) {
+                $mensagemErro = trim($db->lastErrorMsg() ?: '');
+                $stmtInsert = null;
+                throw new RuntimeException('Não foi possível preparar a instrução de inserção de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
+            }
+        }
+
+        bindValorOuNulo($stmtInsert, ':id', $dados['id']);
+        bindValorOuNulo($stmtInsert, ':nome', $dados['nome']);
+        bindValorOuNulo($stmtInsert, ':tipo', $dados['tipo']);
+        bindValorOuNulo($stmtInsert, ':numero_documento', $dados['numero_documento']);
+        bindValorOuNulo($stmtInsert, ':celular', $dados['celular']);
+        bindValorOuNulo($stmtInsert, ':telefone', $dados['telefone']);
+        bindValorOuNulo($stmtInsert, ':codigo', $dados['codigo']);
+        bindValorOuNulo($stmtInsert, ':rua', $dados['rua']);
+        bindValorOuNulo($stmtInsert, ':numero', $dados['numero']);
+        bindValorOuNulo($stmtInsert, ':bairro', $dados['bairro']);
+        bindValorOuNulo($stmtInsert, ':cidade', $dados['cidade']);
+        bindValorOuNulo($stmtInsert, ':estado', $dados['estado']);
+        bindValorOuNulo($stmtInsert, ':cep', $dados['cep']);
+        bindInteiroOuNulo($stmtInsert, ':permite_boleto', $dados['permite_boleto']);
+        bindValorOuNulo($stmtInsert, ':atualizado_em', $dados['atualizado_em']);
+
+        $resultado = $stmtInsert->execute();
+        if ($resultado === false) {
+            throw new RuntimeException('Falha ao gravar cliente no banco local.');
+        }
+        if ($resultado instanceof SQLite3Result) {
+            $resultado->finalize();
+        }
+        $stmtInsert->reset();
+    }
 }
 
 /**
@@ -151,28 +245,53 @@ function removerClientesForaDaLista(SQLite3 $db, array $idsAtuais): void
         return;
     }
 
-    $placeholders = implode(',', array_fill(0, count($idsNormalizados), '?'));
-    $stmt = $db->prepare("DELETE FROM clientes WHERE id NOT IN ($placeholders)");
-    if (!$stmt instanceof SQLite3Stmt) {
-        $mensagemErro = trim($db->lastErrorMsg() ?: '');
-        throw new RuntimeException('Não foi possível preparar a limpeza de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
-    }
-
-    $indice = 1;
-    foreach (array_keys($idsNormalizados) as $id) {
-        $stmt->bindValue($indice, $id, SQLITE3_TEXT);
-        $indice++;
-    }
-
-    $resultado = $stmt->execute();
+    $resultado = $db->query('SELECT id FROM clientes');
     if ($resultado === false) {
-        $stmt->close();
-        throw new RuntimeException('Falha ao remover clientes ausentes da lista informada.');
+        return;
     }
 
+    $idsParaRemover = [];
+    while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+        if (!is_array($linha) || !isset($linha['id'])) {
+            continue;
+        }
+
+        $idExistente = (string) $linha['id'];
+        if (!isset($idsNormalizados[$idExistente])) {
+            $idsParaRemover[] = $idExistente;
+        }
+    }
     $resultado->finalize();
-    $stmt->clear();
-    $stmt->close();
+
+    if (empty($idsParaRemover)) {
+        return;
+    }
+
+    foreach (array_chunk($idsParaRemover, 900) as $lote) {
+        $placeholders = implode(',', array_fill(0, count($lote), '?'));
+        $stmt = $db->prepare("DELETE FROM clientes WHERE id IN ($placeholders)");
+        if (!$stmt instanceof SQLite3Stmt) {
+            $mensagemErro = trim($db->lastErrorMsg() ?: '');
+            throw new RuntimeException('Não foi possível preparar a remoção de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
+        }
+
+        $indice = 1;
+        foreach ($lote as $id) {
+            $stmt->bindValue($indice, $id, SQLITE3_TEXT);
+            $indice++;
+        }
+
+        $execucao = $stmt->execute();
+        if ($execucao === false) {
+            $stmt->close();
+            throw new RuntimeException('Falha ao remover clientes ausentes da lista informada.');
+        }
+
+        if ($execucao instanceof SQLite3Result) {
+            $execucao->finalize();
+        }
+        $stmt->close();
+    }
 }
 
 /**
@@ -223,6 +342,30 @@ function buscarClientesLocalmente(SQLite3 $db): array
 }
 
 /**
+ * Retorna um cliente específico armazenado no banco local.
+ */
+function buscarClienteLocalBruto(SQLite3 $db, string $clienteId): ?array
+{
+    $stmt = $db->prepare('SELECT * FROM clientes WHERE id = :id LIMIT 1');
+    if (!$stmt instanceof SQLite3Stmt) {
+        return null;
+    }
+
+    $stmt->bindValue(':id', $clienteId, SQLITE3_TEXT);
+    $resultado = $stmt->execute();
+    if ($resultado === false) {
+        $stmt->close();
+        return null;
+    }
+
+    $linha = $resultado->fetchArray(SQLITE3_ASSOC);
+    $resultado->finalize();
+    $stmt->close();
+
+    return is_array($linha) ? $linha : null;
+}
+
+/**
  * Normaliza e prepara os dados do cliente antes de gravar no banco local.
  */
 function normalizarDadosCliente(array $cliente): array
@@ -250,6 +393,13 @@ function normalizarDadosCliente(array $cliente): array
 
     $endereco = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? []);
     $rua = isset($endereco['endereco']) ? trim((string) $endereco['endereco']) : null;
+    $numero = null;
+    if (isset($cliente['numero'])) {
+        $numero = trim((string) $cliente['numero']);
+    }
+    if ($numero === null && isset($endereco['numero'])) {
+        $numero = trim((string) $endereco['numero']);
+    }
     $bairro = isset($endereco['bairro']) ? trim((string) $endereco['bairro']) : null;
     $cidade = isset($endereco['municipio']) ? trim((string) $endereco['municipio']) : null;
     $estado = isset($endereco['uf']) ? strtoupper(trim((string) $endereco['uf'])) : null;
@@ -257,6 +407,13 @@ function normalizarDadosCliente(array $cliente): array
     $cep = null;
     if (!empty($endereco['cep'])) {
         $cep = preg_replace('/\D+/', '', (string) $endereco['cep']);
+    }
+
+    $permiteBoleto = null;
+    if (array_key_exists('permiteBoleto', $cliente)) {
+        $permiteBoleto = normalizarValorBooleano($cliente['permiteBoleto']);
+    } elseif (array_key_exists('permite_boleto', $cliente)) {
+        $permiteBoleto = normalizarValorBooleano($cliente['permite_boleto']);
     }
 
     return [
@@ -268,12 +425,45 @@ function normalizarDadosCliente(array $cliente): array
         'telefone' => $telefone,
         'codigo' => $codigo,
         'rua' => $rua,
+        'numero' => $numero,
         'bairro' => $bairro,
         'cidade' => $cidade,
         'estado' => $estado,
         'cep' => $cep,
+        'permite_boleto' => $permiteBoleto,
         'atualizado_em' => date('c'),
     ];
+}
+
+function normalizarValorBooleano($valor): ?int
+{
+    if ($valor === null) {
+        return null;
+    }
+
+    if (is_bool($valor)) {
+        return $valor ? 1 : 0;
+    }
+
+    if (is_numeric($valor)) {
+        return ((int) $valor) !== 0 ? 1 : 0;
+    }
+
+    if (is_string($valor)) {
+        $texto = strtolower(trim($valor));
+        if ($texto === '') {
+            return null;
+        }
+
+        if (in_array($texto, ['1', 'true', 'sim', 'yes'], true)) {
+            return 1;
+        }
+        if (in_array($texto, ['0', 'false', 'nao', 'não', 'no'], true)) {
+            return 0;
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -342,10 +532,16 @@ function normalizarClienteParaResposta(array $cliente): ?array
     $enderecoFonte = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? null);
     $enderecoNormalizado = [];
 
+    $numeroEndereco = null;
     if (is_array($enderecoFonte)) {
         $rua = isset($enderecoFonte['endereco']) ? trim((string) $enderecoFonte['endereco']) : '';
         if ($rua !== '') {
             $enderecoNormalizado['endereco'] = $rua;
+        }
+
+        $numeroEndereco = isset($enderecoFonte['numero']) ? trim((string) $enderecoFonte['numero']) : '';
+        if ($numeroEndereco !== '') {
+            $enderecoNormalizado['numero'] = $numeroEndereco;
         }
 
         $bairro = isset($enderecoFonte['bairro']) ? trim((string) $enderecoFonte['bairro']) : '';
@@ -370,6 +566,20 @@ function normalizarClienteParaResposta(array $cliente): ?array
                 $enderecoNormalizado['cep'] = formatarCepSaida($cepDigitos);
             }
         }
+    }
+
+    if (($numeroEndereco === null || $numeroEndereco === '') && isset($cliente['numero'])) {
+        $numeroEndereco = trim((string) $cliente['numero']);
+        if ($numeroEndereco !== '') {
+            $enderecoNormalizado['numero'] = $numeroEndereco;
+        }
+    }
+
+    $permiteBoletoNormalizado = null;
+    if (array_key_exists('permiteBoleto', $cliente)) {
+        $permiteBoletoNormalizado = normalizarValorBooleano($cliente['permiteBoleto']);
+    } elseif (array_key_exists('permite_boleto', $cliente)) {
+        $permiteBoletoNormalizado = normalizarValorBooleano($cliente['permite_boleto']);
     }
 
     $clienteNormalizado = [
@@ -397,8 +607,16 @@ function normalizarClienteParaResposta(array $cliente): ?array
         $clienteNormalizado['telefone'] = $telefone;
     }
 
+    if ($numeroEndereco !== null && $numeroEndereco !== '') {
+        $clienteNormalizado['numero'] = $numeroEndereco;
+    }
+
     if (!empty($enderecoNormalizado)) {
         $clienteNormalizado['endereco'] = ['geral' => $enderecoNormalizado];
+    }
+
+    if ($permiteBoletoNormalizado !== null) {
+        $clienteNormalizado['permiteBoleto'] = $permiteBoletoNormalizado === 1;
     }
 
     return $clienteNormalizado;
@@ -421,6 +639,7 @@ function montarEstruturaCliente(array $linha): array
 
     $endereco = array_filter([
         'endereco' => $linha['rua'] ?? null,
+        'numero' => $linha['numero'] ?? null,
         'bairro' => $linha['bairro'] ?? null,
         'municipio' => $linha['cidade'] ?? null,
         'uf' => $linha['estado'] ?? null,
@@ -447,8 +666,14 @@ function montarEstruturaCliente(array $linha): array
     if (!empty($linha['telefone'])) {
         $cliente['telefone'] = $linha['telefone'];
     }
+    if (!empty($linha['numero'])) {
+        $cliente['numero'] = $linha['numero'];
+    }
     if (!empty($endereco)) {
         $cliente['endereco'] = ['geral' => $endereco];
+    }
+    if (array_key_exists('permite_boleto', $linha)) {
+        $cliente['permiteBoleto'] = ((int) $linha['permite_boleto']) !== 0;
     }
 
     return $cliente;
@@ -490,5 +715,17 @@ function bindValorOuNulo(SQLite3Stmt $stmt, string $parametro, $valor): void
         $stmt->bindValue($parametro, null, SQLITE3_NULL);
     } else {
         $stmt->bindValue($parametro, (string) $valor, SQLITE3_TEXT);
+    }
+}
+
+/**
+ * Faz o bind de valores inteiros, permitindo valores nulos.
+ */
+function bindInteiroOuNulo(SQLite3Stmt $stmt, string $parametro, $valor): void
+{
+    if ($valor === null || $valor === '') {
+        $stmt->bindValue($parametro, null, SQLITE3_NULL);
+    } else {
+        $stmt->bindValue($parametro, (int) $valor, SQLITE3_INTEGER);
     }
 }
