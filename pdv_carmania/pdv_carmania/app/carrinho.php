@@ -65,8 +65,21 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       padding-inline: min(4vw, 2.5rem);
     }
 
+    .navbar-top {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 100%;
+    }
+
     .navbar-custom .navbar-title {
       font-size: clamp(1rem, 2.8vw, 1.25rem);
+      flex: 1 1 auto;
+      text-align: center;
+    }
+
+    .voltar-btn {
+      flex: 0 0 auto;
     }
 
     .navbar-actions {
@@ -75,6 +88,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       flex-wrap: wrap;
       gap: 0.5rem;
       justify-content: flex-end;
+      overflow-x: auto;
     }
 
     .estoque-btn {
@@ -151,9 +165,23 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       gap: 0.5rem;
     }
 
+    .produto-topo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
     .produto-item strong {
       font-size: 1rem;
       line-height: 1.35;
+      flex: 1 1 auto;
+    }
+
+    .produto-estoque {
+      font-size: 0.85rem;
+      color: #6c757d;
+      flex: 0 0 auto;
     }
 
     .produto-controles {
@@ -183,9 +211,12 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       white-space: nowrap;
     }
 
-    .valor-unitario {
-      font-weight: 600;
-      color: #212529;
+    .valor-unitario-group {
+      width: 130px;
+    }
+
+    .valor-unitario-input {
+      text-align: right;
     }
 
     .subtotal-label {
@@ -234,12 +265,18 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         padding-inline: 1rem;
       }
 
+      .navbar-title {
+        text-align: center;
+      }
+
       .navbar-actions {
-        justify-content: stretch;
+        justify-content: center;
+        flex-wrap: nowrap;
       }
 
       .navbar-actions .btn {
-        flex: 1 1 48%;
+        flex: 1 1 auto;
+        min-width: 0;
       }
 
       .cart-wrapper {
@@ -276,13 +313,13 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
       .navbar-actions {
         width: 100%;
-        flex-direction: column;
+        flex-wrap: nowrap;
       }
 
       .navbar-actions .btn {
-        width: 100%;
         flex: 1 1 auto;
         min-height: 48px;
+        min-width: 0;
       }
 
       .cart-wrapper {
@@ -355,16 +392,16 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
   <!-- Barra superior -->
   <nav class="navbar navbar-dark navbar-custom">
     <div class="container-fluid navbar-inner">
-      <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-        <button class="btn btn-light" onclick="voltar()">⬅ Voltar</button>
-        <span class="navbar-text text-white fw-bold navbar-title flex-grow-1 text-center text-sm-start">Carrinho</span>
+      <div class="navbar-top">
+        <button class="btn btn-light voltar-btn" onclick="voltar()">⬅ Voltar</button>
+        <span class="navbar-text text-white fw-bold navbar-title">Carrinho</span>
       </div>
       <div class="navbar-actions">
-      <button id="btnEstoque" class="btn estoque-btn" onclick="abrirModalEstoque()">🏷 Estoque: <span id="estoqueSelecionadoLabel">Nenhum</span></button>
-      <button id="btnAtualizarEstoque" class="btn btn-outline-warning" onclick="atualizarEstoqueLocal()">🔄 Atualizar Estoque</button>
-      <button class="btn btn-outline-light" onclick="abrirModalCliente()">
-        <span id="btnClienteLabel">Selecionar Cliente</span>
-      </button>
+        <button id="btnEstoque" class="btn estoque-btn" onclick="abrirModalEstoque()">🏷 Estoque: <span id="estoqueSelecionadoLabel">Nenhum</span></button>
+        <button class="btn btn-outline-light" onclick="abrirModalCliente()">
+          <span id="btnClienteLabel">Selecionar Cliente</span>
+        </button>
+        <button id="btnAtualizarEstoque" class="btn btn-outline-warning" onclick="atualizarEstoqueLocal()">🔄 Atualizar Estoque</button>
       </div>
     </div>
   </nav>
@@ -901,21 +938,25 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
         const qtd = Number(item.quantidade) || 0;
         const subtotal = preco * qtd;
         total += subtotal;
-        const precoFormatado = preco.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const subtotalFormatado = subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const div = document.createElement("div");
         div.className = "produto-item";
         div.innerHTML = `
-          <div><strong>${item.nome}</strong></div>
-          <div class="text-muted small">Estoque: ${item.disponivel ?? 0}</div>
+          <div class="produto-topo">
+            <strong>${item.nome}</strong>
+            <span class="produto-estoque">Estoque: ${item.disponivel ?? 0}</span>
+          </div>
           <div class="produto-controles">
             <div class="controle controle-quantidade">
-              <label class="mb-0">Qtd:</label>
-              <input type="number" inputmode="numeric" min="1" value="${qtd}" onchange="atualizarQuantidade(${i}, this.value)" class="form-control form-control-sm quantidade-input">
+              <label class="mb-0" for="quantidade-${i}">Qtd:</label>
+              <input id="quantidade-${i}" type="number" inputmode="numeric" min="1" value="${qtd}" onchange="atualizarQuantidade(${i}, this.value)" class="form-control form-control-sm quantidade-input">
             </div>
             <div class="controle controle-preco">
-              <label class="mb-0">Valor:</label>
-              <span class="valor-unitario">R$ ${precoFormatado}</span>
+              <label class="mb-0" for="valor-${i}">Valor:</label>
+              <div class="input-group input-group-sm valor-unitario-group">
+                <span class="input-group-text">R$</span>
+                <input id="valor-${i}" type="number" inputmode="decimal" min="0" step="0.01" value="${preco.toFixed(2)}" onchange="atualizarPreco(${i}, this.value)" class="form-control valor-unitario-input">
+              </div>
             </div>
             <span class="subtotal-label">Subtotal: R$ ${subtotalFormatado}</span>
             <button class="btn btn-outline-danger btn-sm btn-sm-full" onclick="removerProduto(${i})">Remover</button>
@@ -929,6 +970,16 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       const v = parseInt(valor);
       if (isNaN(v) || v < 1) return;
       carrinho[i].quantidade = v;
+      salvarCarrinho();
+      renderizarCarrinho();
+    }
+
+    function atualizarPreco(i, valor) {
+      const v = parseFloat(valor);
+      if (Number.isNaN(v) || v < 0) {
+        return;
+      }
+      carrinho[i].preco = v;
       salvarCarrinho();
       renderizarCarrinho();
     }
