@@ -507,6 +507,26 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     let carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+    if (!Array.isArray(carrinho)) {
+      carrinho = [];
+    } else {
+      carrinho = carrinho.map((item) => {
+        if (!item || typeof item !== 'object') return item;
+
+        const precoOriginalBruto = Number(item.precoOriginal);
+        const precoAtualBruto = Number(item.preco);
+        const precoOriginalValido = Number.isFinite(precoOriginalBruto) ? precoOriginalBruto : (Number.isFinite(precoAtualBruto) ? precoAtualBruto : 0);
+        const precoAtualValido = Number.isFinite(precoAtualBruto) && precoAtualBruto >= precoOriginalValido
+          ? precoAtualBruto
+          : precoOriginalValido;
+
+        return {
+          ...item,
+          precoOriginal: precoOriginalValido,
+          preco: precoAtualValido,
+        };
+      });
+    }
     let clientesLista = [];
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
     const CLIENTES_CACHE_KEY = "clientesListaCache";
@@ -1058,7 +1078,9 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
       let total = 0;
       carrinho.forEach((item, i) => {
-        const preco = Number(item.preco) || 0;
+        const precoMinimo = Number.isFinite(Number(item.precoOriginal)) ? Number(item.precoOriginal) : 0;
+        const precoAtual = Number(item.preco);
+        const preco = Number.isFinite(precoAtual) ? precoAtual : precoMinimo;
         const qtd = Number(item.quantidade) || 0;
         const subtotal = preco * qtd;
         total += subtotal;
@@ -1079,7 +1101,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
               <label class="mb-0" for="valor-${i}">Valor:</label>
               <div class="input-group input-group-sm valor-unitario-group">
                 <span class="input-group-text">R$</span>
-                <input id="valor-${i}" type="number" inputmode="decimal" min="0" step="0.01" value="${preco.toFixed(2)}" onchange="atualizarPreco(${i}, this.value)" class="form-control valor-unitario-input">
+                <input id="valor-${i}" type="number" inputmode="decimal" min="${precoMinimo.toFixed(2)}" step="0.01" value="${preco.toFixed(2)}" onchange="atualizarPreco(${i}, this.value)" class="form-control valor-unitario-input">
               </div>
             </div>
             <span class="subtotal-label">Subtotal: R$ ${subtotalFormatado}</span>
@@ -1099,11 +1121,16 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     }
 
     function atualizarPreco(i, valor) {
-      const v = parseFloat(valor);
-      if (Number.isNaN(v) || v < 0) {
-        return;
-      }
-      carrinho[i].preco = v;
+      const item = carrinho[i];
+      if (!item) return;
+
+      const precoMinimo = Number.isFinite(Number(item.precoOriginal)) ? Number(item.precoOriginal) : 0;
+      const valorDigitado = parseFloat(valor);
+      const valorNormalizado = (Number.isFinite(valorDigitado) && valorDigitado >= 0)
+        ? Math.max(valorDigitado, precoMinimo)
+        : precoMinimo;
+
+      item.preco = valorNormalizado;
       salvarCarrinho();
       renderizarCarrinho();
     }

@@ -153,10 +153,22 @@ if (!isset($_SESSION['usuario'])) {
 
   function adicionarAoCarrinho(produto) {
     const existente = carrinho.find(p => p.id === produto.id);
+    const precoBase = Number(produto?.preco ?? (existente ? existente.preco : 0));
+    const precoNormalizado = Number.isFinite(precoBase) ? precoBase : 0;
+
     if (existente) {
+      if (!Number.isFinite(Number(existente.precoOriginal))) {
+        const precoAtual = Number(existente.preco);
+        existente.precoOriginal = Number.isFinite(precoAtual) ? precoAtual : precoNormalizado;
+      }
       existente.quantidade += 1;
     } else {
-      carrinho.push({ ...produto, quantidade: 1 });
+      carrinho.push({
+        ...produto,
+        quantidade: 1,
+        preco: precoNormalizado,
+        precoOriginal: precoNormalizado,
+      });
     }
     localStorage.setItem('carrinho', JSON.stringify(carrinho));
     atualizarContadorCarrinho();
