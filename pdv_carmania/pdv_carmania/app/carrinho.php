@@ -506,7 +506,48 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    let carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
+    function normalizarCarrinho(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw.map((entrada) => {
+        const item = (entrada && typeof entrada === 'object') ? { ...entrada } : {};
+        const precoOriginalBruto = Number(item.precoOriginal);
+        const precoAtualBruto = Number(item.preco);
+        const precoOriginalValido = Number.isFinite(precoOriginalBruto) && precoOriginalBruto >= 0
+          ? precoOriginalBruto
+          : (Number.isFinite(precoAtualBruto) && precoAtualBruto >= 0 ? precoAtualBruto : 0);
+        const precoAtualValido = Number.isFinite(precoAtualBruto) && precoAtualBruto >= precoOriginalValido
+          ? precoAtualBruto
+          : precoOriginalValido;
+        const quantidadeBruta = Number(item.quantidade);
+        const quantidadeValida = Number.isFinite(quantidadeBruta) && quantidadeBruta > 0
+          ? quantidadeBruta
+          : 1;
+
+        return {
+          ...item,
+          quantidade: quantidadeValida,
+          precoOriginal: precoOriginalValido,
+          preco: precoAtualValido,
+        };
+      });
+    }
+
+    function obterCarrinhoInicial() {
+      const armazenado = localStorage.getItem("carrinho");
+      if (!armazenado) {
+        return [];
+      }
+      try {
+        return normalizarCarrinho(JSON.parse(armazenado));
+      } catch (erro) {
+        console.warn('Carrinho salvo inválido. Limpando armazenamento.', erro);
+        localStorage.removeItem("carrinho");
+        return [];
+      }
+    }
+
+    let carrinho = obterCarrinhoInicial();
+    salvarCarrinho();
     let clientesLista = [];
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
     const CLIENTES_CACHE_KEY = "clientesListaCache";
@@ -1043,8 +1084,20 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     // ========================
     // ======= CARRINHO =======
     // ========================
+    function obterPrecoValido(item) {
+      const precoOriginal = Number(item?.precoOriginal);
+      const precoMinimo = Number.isFinite(precoOriginal) && precoOriginal >= 0 ? precoOriginal : 0;
+      const precoAtual = Number(item?.preco);
+      return Number.isFinite(precoAtual) && precoAtual >= precoMinimo ? precoAtual : precoMinimo;
+    }
+
+    function obterQuantidadeValida(item) {
+      const quantidade = Number(item?.quantidade);
+      return Number.isFinite(quantidade) && quantidade > 0 ? quantidade : 1;
+    }
+
     function totalCarrinho() {
-      return carrinho.reduce((s, it) => s + (Number(it.preco) * Number(it.quantidade)), 0);
+      return carrinho.reduce((soma, it) => soma + (obterPrecoValido(it) * obterQuantidadeValida(it)), 0);
     }
 
     function renderizarCarrinho() {
@@ -1058,8 +1111,11 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
       let total = 0;
       carrinho.forEach((item, i) => {
-        const preco = Number(item.preco) || 0;
-        const qtd = Number(item.quantidade) || 0;
+        const precoMinimo = Number.isFinite(Number(item.precoOriginal)) && Number(item.precoOriginal) >= 0
+          ? Number(item.precoOriginal)
+          : 0;
+        const preco = obterPrecoValido(item);
+        const qtd = obterQuantidadeValida(item);
         const subtotal = preco * qtd;
         total += subtotal;
         const subtotalFormatado = subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1079,7 +1135,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
               <label class="mb-0" for="valor-${i}">Valor:</label>
               <div class="input-group input-group-sm valor-unitario-group">
                 <span class="input-group-text">R$</span>
-                <input id="valor-${i}" type="number" inputmode="decimal" min="0" step="0.01" value="${preco.toFixed(2)}" onchange="atualizarPreco(${i}, this.value)" class="form-control valor-unitario-input">
+                <input id="valor-${i}" type="number" inputmode="decimal" min="${precoMinimo.toFixed(2)}" step="0.01" value="${preco.toFixed(2)}" onchange="atualizarPreco(${i}, this.value)" class="form-control valor-unitario-input">
               </div>
             </div>
             <span class="subtotal-label">Subtotal: R$ ${subtotalFormatado}</span>
@@ -1099,11 +1155,16 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     }
 
     function atualizarPreco(i, valor) {
-      const v = parseFloat(valor);
-      if (Number.isNaN(v) || v < 0) {
-        return;
-      }
-      carrinho[i].preco = v;
+      const item = carrinho[i];
+      if (!item) return;
+
+      const precoMinimo = Number.isFinite(Number(item.precoOriginal)) ? Number(item.precoOriginal) : 0;
+      const valorDigitado = parseFloat(valor);
+      const valorNormalizado = (Number.isFinite(valorDigitado) && valorDigitado >= 0)
+        ? Math.max(valorDigitado, precoMinimo)
+        : precoMinimo;
+
+      item.preco = valorNormalizado;
       salvarCarrinho();
       renderizarCarrinho();
     }
@@ -1115,7 +1176,12 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     }
 
     function salvarCarrinho() {
-      localStorage.setItem("carrinho", JSON.stringify(carrinho));
+      carrinho = normalizarCarrinho(carrinho);
+      try {
+        localStorage.setItem("carrinho", JSON.stringify(carrinho));
+      } catch (erro) {
+        console.warn('Não foi possível salvar o carrinho.', erro);
+      }
     }
 
     function atualizarTotal(total) {
@@ -1130,8 +1196,11 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
     function verificarEstoqueAntesVenda() {
       for (const item of carrinho) {
-        if ((item.disponivel ?? 0) < item.quantidade) {
-          alert(`❌ Estoque insuficiente para "${item.nome}". Disponível: ${item.disponivel}`);
+        const quantidade = obterQuantidadeValida(item);
+        const disponivel = Number(item?.disponivel);
+        const estoqueDisponivel = Number.isFinite(disponivel) ? disponivel : 0;
+        if (estoqueDisponivel < quantidade) {
+          alert(`❌ Estoque insuficiente para "${item.nome}". Disponível: ${estoqueDisponivel}`);
           return false;
         }
       }
