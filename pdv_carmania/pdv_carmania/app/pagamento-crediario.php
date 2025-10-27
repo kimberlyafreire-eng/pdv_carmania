@@ -39,6 +39,26 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       padding: 1.5rem clamp(0.75rem, 2vw, 2rem);
     }
 
+    .cliente-banner {
+      background: #ffffff;
+      color: #212529;
+      padding: 0.85rem clamp(1rem, 3vw, 2.5rem);
+      font-size: clamp(1rem, 2.6vw, 1.35rem);
+      font-weight: 600;
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+      display: flex;
+      justify-content: center;
+      gap: 0.35rem;
+      text-align: center;
+    }
+
+    .cliente-banner .cliente-label {
+      font-weight: 500;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
     .pagamento-conteudo {
       flex: 1;
       display: flex;
@@ -109,7 +129,7 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     }
 
     .lista-pagamentos-container h5 {
-      font-size: 1rem;
+      font-size: 1.15rem;
       font-weight: 600;
       margin-bottom: 0.5rem;
     }
@@ -139,6 +159,7 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
 
     .formas-wrapper h5 {
       font-weight: 600;
+      font-size: 1.2rem;
     }
 
     .formas-grid {
@@ -151,9 +172,9 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       background: #ffffff;
       border: 2px solid #dc3545;
       border-radius: 14px;
-      padding: 0;
+      padding: 1rem 0.75rem;
       width: 100%;
-      aspect-ratio: 1;
+      min-height: 110px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -163,8 +184,8 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       cursor: pointer;
       user-select: none;
-      font-size: 1.05rem;
-      padding-inline: 0.35rem;
+      font-size: 1.15rem;
+      line-height: 1.35;
     }
 
     .forma-card:hover,
@@ -257,8 +278,14 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .cliente-banner {
+        font-size: 1.05rem;
+        padding-inline: 1rem;
+      }
+
       .forma-card {
-        min-height: 140px;
+        min-height: 104px;
+        font-size: 1.1rem;
       }
 
       .recibo-area {
@@ -293,6 +320,11 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     <span class="navbar-text text-white fw-bold">Pagamento Crediário</span>
     <div></div>
   </nav>
+
+  <div class="cliente-banner">
+    <span class="cliente-label">Cliente</span>
+    <span class="cliente-nome" id="clienteCrediarioNome">Não selecionado</span>
+  </div>
 
   <main class="container-fluid" id="telaPagamento">
     <div class="container pagamento-conteudo">
@@ -368,6 +400,7 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     const toNum = (v) => parseFloat((v ?? 0)) || 0;
     const usuarioLogado = window.USUARIO_LOGADO || null;
 
+    const clienteNomeEl = document.getElementById("clienteCrediarioNome");
     const cliente = JSON.parse(localStorage.getItem("clienteRecebimento") || "null");
     const saldoData = JSON.parse(localStorage.getItem("saldoCrediario") || "null");
 
@@ -402,6 +435,17 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
 
     const totalReceber = toNum(saldoData.saldoAtual || 0);
     document.getElementById("valorTotal").textContent = fmt(totalReceber);
+
+    function atualizarClienteBanner() {
+      if (!clienteNomeEl) return;
+      if (cliente?.nome) {
+        clienteNomeEl.textContent = cliente.nome;
+      } else {
+        clienteNomeEl.textContent = "Cliente não selecionado";
+      }
+    }
+
+    atualizarClienteBanner();
 
     let pagamentos = [];
     let formaSelecionada = null;

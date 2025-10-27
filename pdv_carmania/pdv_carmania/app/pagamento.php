@@ -63,6 +63,26 @@ if ($usuarioLogado) {
       padding: 1.5rem clamp(0.75rem, 2vw, 2rem);
     }
 
+    .cliente-banner {
+      background: #ffffff;
+      color: #212529;
+      padding: 0.85rem clamp(1rem, 3vw, 2.5rem);
+      font-size: clamp(1rem, 2.6vw, 1.35rem);
+      font-weight: 600;
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+      display: flex;
+      justify-content: center;
+      gap: 0.35rem;
+      text-align: center;
+    }
+
+    .cliente-banner .cliente-label {
+      font-weight: 500;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
     .pagamento-conteudo {
       flex: 1;
       display: flex;
@@ -137,7 +157,7 @@ if ($usuarioLogado) {
     }
 
     .lista-pagamentos-container h5 {
-      font-size: 1rem;
+      font-size: 1.15rem;
       font-weight: 600;
       margin-bottom: 0.5rem;
     }
@@ -167,6 +187,7 @@ if ($usuarioLogado) {
 
     .formas-wrapper h5 {
       font-weight: 600;
+      font-size: 1.2rem;
     }
 
     .formas-grid {
@@ -179,9 +200,9 @@ if ($usuarioLogado) {
       background: #ffffff;
       border: 2px solid #dc3545;
       border-radius: 14px;
-      padding: 0;
+      padding: 1rem 0.75rem;
       width: 100%;
-      aspect-ratio: 1;
+      min-height: 110px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -191,8 +212,8 @@ if ($usuarioLogado) {
       transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       cursor: pointer;
       user-select: none;
-      font-size: 1.05rem;
-      padding-inline: 0.35rem;
+      font-size: 1.15rem;
+      line-height: 1.35;
     }
 
     .forma-card:hover,
@@ -285,8 +306,14 @@ if ($usuarioLogado) {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .cliente-banner {
+        font-size: 1.05rem;
+        padding-inline: 1rem;
+      }
+
       .forma-card {
-        min-height: 140px;
+        min-height: 104px;
+        font-size: 1.1rem;
       }
 
       .recibo-area {
@@ -321,6 +348,11 @@ if ($usuarioLogado) {
     <span class="navbar-text text-white fw-bold">Pagamento</span>
     <div></div>
   </nav>
+
+  <div class="cliente-banner">
+    <span class="cliente-label">Cliente</span>
+    <span class="cliente-nome" id="clienteSelecionadoNome">Não selecionado</span>
+  </div>
 
   <main class="container-fluid" id="telaPagamento">
     <div class="container pagamento-conteudo">
@@ -407,6 +439,7 @@ if ($usuarioLogado) {
     const btnConcluirEl = document.getElementById("btnConcluir");
 
     const vendedorId = window.VENDEDOR_ID || null;
+    const clienteNomeEl = document.getElementById("clienteSelecionadoNome");
     const dadosVenda = JSON.parse(localStorage.getItem("dadosVenda") || "null");
     let carrinho = [], clienteSelecionado = null, descontoValor = 0, descontoPercentual = 0, totalVenda = 0;
 
@@ -425,6 +458,17 @@ if ($usuarioLogado) {
     }
 
     document.getElementById("valorTotal").textContent = fmt(totalVenda);
+
+    function atualizarClienteBanner() {
+      if (!clienteNomeEl) return;
+      if (clienteSelecionado?.nome) {
+        clienteNomeEl.textContent = clienteSelecionado.nome;
+      } else {
+        clienteNomeEl.textContent = "Cliente não selecionado";
+      }
+    }
+
+    atualizarClienteBanner();
 
     let pagamentos = [], formaSelecionada = null, totalTrocoAtual = 0;
 
