@@ -160,16 +160,27 @@ if ($usuarioLogado && file_exists($dbFile)) {
         <h2 class="mb-1">Produtos</h2>
         <p class="text-muted mb-0">Consulte estoque por depósito ou de forma geral e mantenha os cadastros sincronizados.</p>
       </div>
-      <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2">
-        <div class="d-flex align-items-center gap-2">
-          <label for="selectDeposito" class="fw-semibold text-muted mb-0">Depósito:</label>
-          <select id="selectDeposito" class="form-select">
-            <option value="geral">Todos os depósitos</option>
-          </select>
+      <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2 w-100">
+        <div class="flex-grow-1">
+          <input
+            type="search"
+            id="campoBusca"
+            class="form-control"
+            placeholder="Buscar produto por nome, código, código de barras ou GTIN..."
+            autocomplete="off"
+          />
         </div>
-        <button id="btnSincronizarProdutos" type="button" class="btn btn-danger fw-semibold">
-          SINCRONIZAR PRODUTOS
-        </button>
+        <div class="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <label for="selectDeposito" class="fw-semibold text-muted mb-0">Depósito:</label>
+            <select id="selectDeposito" class="form-select">
+              <option value="geral">Todos os depósitos</option>
+            </select>
+          </div>
+          <button id="btnSincronizarProdutos" type="button" class="btn btn-danger fw-semibold">
+            SINCRONIZAR PRODUTOS
+          </button>
+        </div>
       </div>
     </div>
 
@@ -208,16 +219,28 @@ if ($usuarioLogado && file_exists($dbFile)) {
     const selectDeposito = document.getElementById('selectDeposito');
     const alertasEl = document.getElementById('alertas');
     const btnSincronizar = document.getElementById('btnSincronizarProdutos');
+    const campoBusca = document.getElementById('campoBusca');
 
     let produtos = [];
     let estoqueAtual = {};
     let depositos = [];
+    let termoBuscaAtual = '';
     const estoqueDetalhadoCache = Object.create(null);
     const detalhesAbertos = new Set();
     const carregamentosPendentes = new Map();
 
     const formatarMoeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
     const formatarNumero = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+
+    const removerAcentos = (texto) => typeof texto === 'string'
+      ? texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      : '';
+
+    const normalizarTexto = (texto) => removerAcentos(String(texto || '')).toLowerCase();
+
+    function obterTermosBusca(termo) {
+      return normalizarTexto(termo).split(/\s+/).filter(Boolean);
+    }
 
     function obterClasseEstoque(quantidade) {
       if (quantidade > 0) {
@@ -250,6 +273,36 @@ if ($usuarioLogado && file_exists($dbFile)) {
       alertasEl.innerHTML = '';
     }
 
+    function obterProdutosFiltrados() {
+      const termo = termoBuscaAtual;
+      const termoNormalizado = normalizarTexto(termo);
+      const termosNome = obterTermosBusca(termo);
+      const termoLower = String(termo || '').toLowerCase();
+      const termoLowerCompacto = termoLower.replace(/\s+/g, '');
+
+      return produtos.filter((produto) => {
+        if (!termoNormalizado) {
+          return true;
+        }
+
+        if (!produto || typeof produto !== 'object') {
+          return false;
+        }
+
+        const nomeNormalizado = normalizarTexto(produto.nome || '');
+        const codigo = String(produto.codigo || '').toLowerCase();
+        const gtin = String(produto.gtin || '').toLowerCase();
+        const codigoCompacto = codigo.replace(/\s+/g, '');
+        const gtinCompacto = gtin.replace(/\s+/g, '');
+
+        const correspondeNome = termosNome.every((parte) => nomeNormalizado.includes(parte));
+        const correspondeCodigo = codigo.includes(termoLower) || codigoCompacto.includes(termoLowerCompacto);
+        const correspondeGtin = gtin.includes(termoLower) || gtinCompacto.includes(termoLowerCompacto);
+
+        return correspondeNome || correspondeCodigo || correspondeGtin;
+      });
+    }
+
     function renderizarTabela() {
       detalhesAbertos.clear();
       carregamentosPendentes.clear();
@@ -259,7 +312,17 @@ if ($usuarioLogado && file_exists($dbFile)) {
         return;
       }
 
-      const linhas = produtos.map(produto => {
+      const filtrados = obterProdutosFiltrados();
+
+      if (!filtrados.length) {
+        const mensagemBusca = termoBuscaAtual
+          ? `Nenhum produto encontrado para "${escapeHtml(termoBuscaAtual)}".`
+          : 'Nenhum produto encontrado no banco local.';
+        tabelaProdutos.innerHTML = `<tr><td colspan="5" class="text-center py-5 text-muted">${mensagemBusca}</td></tr>`;
+        return;
+      }
+
+      const linhas = filtrados.map(produto => {
         const estoque = estoqueAtual[produto.id] ?? 0;
         const estoqueBadgeClass = obterClasseEstoque(estoque);
         const gtin = produto.gtin ? escapeHtml(produto.gtin) : '—';
@@ -302,7 +365,14 @@ if ($usuarioLogado && file_exists($dbFile)) {
         if (!json || !Array.isArray(json.data)) {
           throw new Error('Retorno inválido ao listar produtos.');
         }
-        produtos = json.data;
+        produtos = json.data
+          .filter((produto) => produto && typeof produto === 'object')
+          .map((produto) => ({
+            ...produto,
+            nome: produto.nome ?? '',
+            codigo: produto.codigo ?? '',
+            gtin: produto.gtin ?? ''
+          }));
       } catch (erro) {
         console.error('Erro ao carregar produtos:', erro);
         mostrarAlerta('danger', 'Não foi possível carregar os produtos. Tente novamente.');
@@ -633,6 +703,29 @@ if ($usuarioLogado && file_exists($dbFile)) {
     selectDeposito.addEventListener('change', () => {
       carregarEstoqueDeposito();
     });
+
+    function atualizarFiltroBusca(termo) {
+      termoBuscaAtual = String(termo || '');
+      renderizarTabela();
+    }
+
+    if (campoBusca) {
+      campoBusca.addEventListener('input', (event) => {
+        atualizarFiltroBusca(event.target.value);
+      });
+
+      campoBusca.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          atualizarFiltroBusca(event.target.value);
+        }
+
+        if (event.key === 'Escape' && campoBusca.value) {
+          campoBusca.value = '';
+          atualizarFiltroBusca('');
+        }
+      });
+    }
 
     tabelaProdutos.addEventListener('click', (event) => {
       const botao = event.target.closest('button[data-action]');
