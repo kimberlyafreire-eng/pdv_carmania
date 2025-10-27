@@ -455,6 +455,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
   <script>
     let carrinho = JSON.parse(localStorage.getItem("carrinho") || "[]");
     let clientesLista = [];
+    let clientesCarregarPromise = null;
     let clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
 
     function atualizarClienteSelecionadoSeIncompleto() {
@@ -618,37 +619,66 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
       return sanitizarClientes(listaBruta);
     }
 
-    async function carregarClientes() {
-      const fontes = [
-        `../api/clientes.php?nocache=${Date.now()}`,
-        `../cache/clientes-cache.json?nocache=${Date.now()}`,
-      ];
+    async function carregarClientes(opcoes = {}) {
+      const forceRefresh = Boolean(opcoes.forceRefresh);
 
-      for (let i = 0; i < fontes.length; i += 1) {
-        const url = fontes[i];
-        try {
-          const resultado = await buscarClientes(url);
-          if (resultado.length) {
-            clientesLista = resultado;
-            atualizarClienteSelecionadoSeIncompleto();
-            return;
-          }
-        } catch (erro) {
-          console.warn(`Falha ao ler clientes de ${url}`, erro);
+      if (!forceRefresh) {
+        if (clientesLista.length) {
+          return clientesLista;
+        }
+        if (clientesCarregarPromise) {
+          return clientesCarregarPromise;
         }
       }
 
-      clientesLista = [];
-    }
+      const timestamp = Date.now();
+      const fontes = forceRefresh
+        ? [
+          `../api/clientes.php?refresh=1&nocache=${timestamp}`,
+          `../cache/clientes-cache.json?nocache=${timestamp}`,
+        ]
+        : [
+          `../cache/clientes-cache.json?nocache=${timestamp}`,
+          `../api/clientes.php?nocache=${timestamp}`,
+        ];
 
-    carregarClientes();
+      const promessa = (async () => {
+        for (let i = 0; i < fontes.length; i += 1) {
+          const url = fontes[i];
+          try {
+            const resultado = await buscarClientes(url);
+            if (resultado.length) {
+              clientesLista = resultado;
+              atualizarClienteSelecionadoSeIncompleto();
+              return clientesLista;
+            }
+          } catch (erro) {
+            console.warn(`Falha ao ler clientes de ${url}`, erro);
+          }
+        }
+
+        clientesLista = [];
+        return clientesLista;
+      })();
+
+      if (!forceRefresh) {
+        clientesCarregarPromise = promessa.finally(() => {
+          clientesCarregarPromise = null;
+        });
+        return clientesCarregarPromise;
+      }
+
+      return promessa;
+    }
 
     function abrirModalCliente() {
       const input = document.getElementById("clienteBusca");
       input.value = "";
       delete input.dataset.id;
       document.getElementById("listaClientes").innerHTML = "";
-      carregarClientes();
+      carregarClientes().catch((erro) => {
+        console.warn('Falha ao atualizar lista de clientes ao abrir modal:', erro);
+      });
       new bootstrap.Modal(document.getElementById("modalCliente")).show();
     }
 
@@ -1085,7 +1115,9 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     function voltar() { window.location.href = "index.php"; }
 
     // ====== INIT ======
-    carregarClientes();
+    carregarClientes().catch((erro) => {
+      console.error('Erro ao carregar clientes:', erro);
+    });
     renderizarCarrinho();
     atualizarBotaoCliente();
     atualizarBotaoEstoque();
