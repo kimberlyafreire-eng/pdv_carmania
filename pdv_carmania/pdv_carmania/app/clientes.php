@@ -240,6 +240,8 @@ if (!isset($_SESSION['usuario'])) {
     const saldosPendentes = new Set();
 
     let clientes = [];
+    let clientesFonteBruta = [];
+    let clientesCarregarPromise = null;
     let clienteSelecionado = null;
     let saldoNegativoAtivo = false;
     let modoFormulario = 'lista';
@@ -249,6 +251,166 @@ if (!isset($_SESSION['usuario'])) {
       atualizarEstadoBotaoSaldo();
     } else {
       btnSaldoNegativo.classList.add('d-none');
+    }
+
+    function sanitizarClientes(listaBruta) {
+      if (!Array.isArray(listaBruta)) {
+        return [];
+      }
+
+      const mapa = new Map();
+
+      listaBruta.forEach((clienteOriginal) => {
+        if (!clienteOriginal || typeof clienteOriginal !== 'object') return;
+
+        const id = String(clienteOriginal.id ?? '').trim();
+        if (!id) return;
+
+        const nomesPossiveis = [clienteOriginal.nome, clienteOriginal.razaoSocial, clienteOriginal.fantasia];
+        let nomeLimpo = '';
+        for (let i = 0; i < nomesPossiveis.length; i += 1) {
+          const valor = nomesPossiveis[i];
+          if (typeof valor === 'string') {
+            const texto = valor.trim();
+            if (texto) {
+              nomeLimpo = texto;
+              break;
+            }
+          }
+        }
+
+        if (!nomeLimpo) return;
+
+        const base = { ...clienteOriginal, id, nome: nomeLimpo };
+
+        const doc = typeof clienteOriginal.numeroDocumento === 'string' && clienteOriginal.numeroDocumento.trim()
+          ? clienteOriginal.numeroDocumento.trim()
+          : (typeof clienteOriginal.documento === 'string' && clienteOriginal.documento.trim()
+            ? clienteOriginal.documento.trim()
+            : null);
+        if (doc) {
+          base.numeroDocumento = doc;
+        }
+
+        if (typeof clienteOriginal.celular === 'string' && clienteOriginal.celular.trim()) {
+          base.celular = clienteOriginal.celular.trim();
+        }
+
+        if (typeof clienteOriginal.telefone === 'string' && clienteOriginal.telefone.trim()) {
+          base.telefone = clienteOriginal.telefone.trim();
+        }
+
+        if (clienteOriginal.endereco && typeof clienteOriginal.endereco === 'object') {
+          base.endereco = clienteOriginal.endereco;
+        }
+
+        const numeroEndereco = clienteOriginal.numero
+          ?? clienteOriginal?.endereco?.geral?.numero
+          ?? clienteOriginal?.endereco?.numero;
+        if (numeroEndereco !== undefined && numeroEndereco !== null && String(numeroEndereco).trim()) {
+          base.numero = String(numeroEndereco).trim();
+        }
+
+        if (typeof clienteOriginal.permiteBoleto === 'boolean') {
+          base.permiteBoleto = clienteOriginal.permiteBoleto;
+        } else if (clienteOriginal.permite_boleto !== undefined) {
+          base.permiteBoleto = Boolean(clienteOriginal.permite_boleto);
+        }
+
+        mapa.set(id, base);
+      });
+
+      return Array.from(mapa.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
+    }
+
+    async function buscarClientes(url) {
+      const resposta = await fetch(url, { cache: 'no-store' });
+      if (!resposta.ok) {
+        throw new Error(`Falha ao carregar clientes: ${resposta.status}`);
+      }
+
+      const texto = await resposta.text();
+      if (!texto) {
+        return [];
+      }
+
+      let json;
+      try {
+        json = JSON.parse(texto);
+      } catch (erro) {
+        throw new Error('JSON inválido ao carregar clientes.');
+      }
+
+      let listaBruta = [];
+      if (json && typeof json === 'object' && Array.isArray(json.data)) {
+        listaBruta = json.data;
+      } else if (Array.isArray(json)) {
+        listaBruta = json;
+      }
+
+      if (!Array.isArray(listaBruta) || !listaBruta.length) {
+        return [];
+      }
+
+      return sanitizarClientes(listaBruta);
+    }
+
+    async function obterClientesLista(opcoes = {}) {
+      const forceRefresh = Boolean(opcoes.forceRefresh);
+      if (!forceRefresh) {
+        if (clientesFonteBruta.length) {
+          return clientesFonteBruta;
+        }
+        if (clientesCarregarPromise) {
+          return clientesCarregarPromise;
+        }
+      } else if (clientesCarregarPromise) {
+        return clientesCarregarPromise;
+      }
+
+      const timestamp = Date.now();
+      const fontes = forceRefresh
+        ? [
+          `../api/clientes.php?refresh=1&nocache=${timestamp}`,
+          `../cache/clientes-cache.json?nocache=${timestamp}`,
+        ]
+        : [
+          `../cache/clientes-cache.json?nocache=${timestamp}`,
+          `../api/clientes.php?nocache=${timestamp}`,
+        ];
+
+      const possuiaClientes = clientesFonteBruta.length > 0;
+
+      const promessaBase = (async () => {
+        for (let i = 0; i < fontes.length; i += 1) {
+          const url = fontes[i];
+          try {
+            const resultado = await buscarClientes(url);
+            if (resultado.length) {
+              clientesFonteBruta = resultado;
+              return clientesFonteBruta;
+            }
+          } catch (erro) {
+            console.warn(`Falha ao ler clientes de ${url}`, erro);
+          }
+        }
+
+        if (!possuiaClientes) {
+          clientesFonteBruta = [];
+          return clientesFonteBruta;
+        }
+
+        return clientesFonteBruta;
+      })();
+
+      const promessa = promessaBase.finally(() => {
+        if (clientesCarregarPromise === promessa) {
+          clientesCarregarPromise = null;
+        }
+      });
+
+      clientesCarregarPromise = promessa;
+      return promessa;
     }
 
     function setMensagem(tipo, texto) {
@@ -684,24 +846,32 @@ if (!isset($_SESSION['usuario'])) {
     }
 
     async function carregarClientes(forcarAtualizacao = false) {
-      listaClientesEl.innerHTML = '<div class="text-center text-muted py-3">Carregando clientes...</div>';
+      if (!forcarAtualizacao && clientes.length) {
+        atualizarListaClientes(buscaClienteInput.value);
+        return clientes;
+      }
+
+      if (!clientes.length || forcarAtualizacao) {
+        listaClientesEl.innerHTML = '<div class="text-center text-muted py-3">Carregando clientes...</div>';
+      }
+
       try {
-        const endpoint = forcarAtualizacao ? '../api/clientes.php?refresh=1' : '../api/clientes.php';
-        const resposta = await fetch(endpoint, { cache: 'no-store' });
-        if (!resposta.ok) {
-          throw new Error('Erro ao consultar clientes.');
-        }
-        const json = await resposta.json();
-        const dados = Array.isArray(json.data) ? json.data : [];
+        const listaBruta = await obterClientesLista({ forceRefresh: forcarAtualizacao });
+        const dados = Array.isArray(listaBruta) ? listaBruta : [];
         clientes = dados
           .filter(cliente => cliente && typeof cliente === 'object')
-          .map(cliente => {
-            const chave = obterChaveCliente(cliente.id);
-            const saldo = HABILITAR_SALDOS ? obterSaldoRegistrado(chave) : null;
-            return {
-              ...cliente,
-              saldoCrediario: saldo
-            };
+          .map((cliente) => {
+            const copia = { ...cliente };
+            const chave = obterChaveCliente(copia.id);
+            if (HABILITAR_SALDOS) {
+              const saldo = obterSaldoRegistrado(chave);
+              if (typeof saldo === 'number' && !Number.isNaN(saldo)) {
+                copia.saldoCrediario = saldo;
+              } else {
+                copia.saldoCrediario = null;
+              }
+            }
+            return copia;
           });
 
         if (HABILITAR_SALDOS) {
@@ -709,8 +879,13 @@ if (!isset($_SESSION['usuario'])) {
         }
 
         atualizarListaClientes(buscaClienteInput.value);
+        return clientes;
       } catch (erro) {
-        listaClientesEl.innerHTML = '<div class="alert alert-danger" role="alert">Não foi possível carregar os clientes. Tente novamente.</div>';
+        console.error('Não foi possível carregar os clientes.', erro);
+        if (!clientes.length) {
+          listaClientesEl.innerHTML = '<div class="alert alert-danger" role="alert">Não foi possível carregar os clientes. Tente novamente.</div>';
+        }
+        throw erro;
       }
     }
 
@@ -740,7 +915,9 @@ if (!isset($_SESSION['usuario'])) {
         limparCacheSaldos();
       }
       atualizarListaClientes(buscaClienteInput.value);
-      carregarClientes(true);
+      carregarClientes(true).catch((erro) => {
+        console.warn('Falha ao recarregar lista de clientes.', erro);
+      });
     });
 
     btnSaldoNegativo.addEventListener('click', () => {
@@ -826,6 +1003,20 @@ if (!isset($_SESSION['usuario'])) {
               saldoCrediario: typeof saldoAtual === 'number' ? saldoAtual : null,
             });
           }
+
+          if (chaveAtualizada !== null) {
+            const normalizados = sanitizarClientes([clienteRetornado]);
+            const clienteNormalizado = normalizados.length ? normalizados[0] : { ...clienteRetornado };
+            const indiceFonte = clientesFonteBruta.findIndex(c => obterChaveCliente(c.id) === chaveAtualizada);
+            if (indiceFonte >= 0) {
+              clientesFonteBruta[indiceFonte] = {
+                ...clientesFonteBruta[indiceFonte],
+                ...clienteNormalizado,
+              };
+            } else {
+              clientesFonteBruta.unshift(clienteNormalizado);
+            }
+          }
         }
 
         limparFormulario();
@@ -837,7 +1028,9 @@ if (!isset($_SESSION['usuario'])) {
             agendarSaldoCliente(chaveAtualizada, true);
           }
         } else {
-          carregarClientes();
+          carregarClientes().catch((erro) => {
+            console.warn('Falha ao atualizar lista de clientes após salvar.', erro);
+          });
         }
       } catch (erro) {
         setMensagem('danger', erro.message);
@@ -845,7 +1038,9 @@ if (!isset($_SESSION['usuario'])) {
     });
 
     carregarTiposContato();
-    carregarClientes();
+    carregarClientes().catch((erro) => {
+      console.warn('Falha ao carregar clientes na inicialização.', erro);
+    });
     setMensagem('primary', 'Busque um cliente para editar ou clique em "Novo Cliente".');
   </script>
 

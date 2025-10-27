@@ -106,6 +106,7 @@ if (!isset($_SESSION['usuario'])) {
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script>
     let clientesLista = [];
+    let clientesCarregarPromise = null;
     let clienteSelecionado = null;
     let titulosCliente = [];
     let relacaoImagemDataUrl = null;
@@ -169,13 +170,13 @@ if (!isset($_SESSION['usuario'])) {
 
       const mapa = new Map();
 
-      listaBruta.forEach((cliente) => {
-        if (!cliente || typeof cliente !== 'object') return;
+      listaBruta.forEach((clienteOriginal) => {
+        if (!clienteOriginal || typeof clienteOriginal !== 'object') return;
 
-        const id = String(cliente.id ?? '').trim();
+        const id = String(clienteOriginal.id ?? '').trim();
         if (!id) return;
 
-        const nomesPossiveis = [cliente.nome, cliente.razaoSocial, cliente.fantasia];
+        const nomesPossiveis = [clienteOriginal.nome, clienteOriginal.razaoSocial, clienteOriginal.fantasia];
         let nomeLimpo = '';
         for (let i = 0; i < nomesPossiveis.length; i += 1) {
           const valor = nomesPossiveis[i];
@@ -190,27 +191,43 @@ if (!isset($_SESSION['usuario'])) {
 
         if (!nomeLimpo) return;
 
-        const existente = mapa.get(id) || { id, nome: nomeLimpo };
-        existente.nome = nomeLimpo;
+        const base = { ...clienteOriginal, id, nome: nomeLimpo };
 
-        const doc = typeof cliente.numeroDocumento === 'string' && cliente.numeroDocumento.trim()
-          ? cliente.numeroDocumento.trim()
-          : (typeof cliente.documento === 'string' && cliente.documento.trim() ? cliente.documento.trim() : null);
-        if (doc) existente.numeroDocumento = doc;
-
-        if (typeof cliente.celular === 'string' && cliente.celular.trim()) {
-          existente.celular = cliente.celular.trim();
+        const doc = typeof clienteOriginal.numeroDocumento === 'string' && clienteOriginal.numeroDocumento.trim()
+          ? clienteOriginal.numeroDocumento.trim()
+          : (typeof clienteOriginal.documento === 'string' && clienteOriginal.documento.trim()
+            ? clienteOriginal.documento.trim()
+            : null);
+        if (doc) {
+          base.numeroDocumento = doc;
         }
 
-        if (typeof cliente.telefone === 'string' && cliente.telefone.trim()) {
-          existente.telefone = cliente.telefone.trim();
+        if (typeof clienteOriginal.celular === 'string' && clienteOriginal.celular.trim()) {
+          base.celular = clienteOriginal.celular.trim();
         }
 
-        if (cliente.endereco && typeof cliente.endereco === 'object') {
-          existente.endereco = cliente.endereco;
+        if (typeof clienteOriginal.telefone === 'string' && clienteOriginal.telefone.trim()) {
+          base.telefone = clienteOriginal.telefone.trim();
         }
 
-        mapa.set(id, existente);
+        if (clienteOriginal.endereco && typeof clienteOriginal.endereco === 'object') {
+          base.endereco = clienteOriginal.endereco;
+        }
+
+        const numeroEndereco = clienteOriginal.numero
+          ?? clienteOriginal?.endereco?.geral?.numero
+          ?? clienteOriginal?.endereco?.numero;
+        if (numeroEndereco !== undefined && numeroEndereco !== null && String(numeroEndereco).trim()) {
+          base.numero = String(numeroEndereco).trim();
+        }
+
+        if (typeof clienteOriginal.permiteBoleto === 'boolean') {
+          base.permiteBoleto = clienteOriginal.permiteBoleto;
+        } else if (clienteOriginal.permite_boleto !== undefined) {
+          base.permiteBoleto = Boolean(clienteOriginal.permite_boleto);
+        }
+
+        mapa.set(id, base);
       });
 
       return Array.from(mapa.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
@@ -248,29 +265,77 @@ if (!isset($_SESSION['usuario'])) {
       return sanitizarClientes(listaBruta);
     }
 
-    async function carregarClientes() {
-      const fontes = [
-        `../api/clientes.php?nocache=${Date.now()}`,
-        `../cache/clientes-cache.json?nocache=${Date.now()}`,
-      ];
-
-      for (let i = 0; i < fontes.length; i += 1) {
-        const url = fontes[i];
-        try {
-          const resultado = await buscarClientes(url);
-          if (resultado.length) {
-            clientesLista = resultado;
-            return;
-          }
-        } catch (erro) {
-          console.warn(`Falha ao ler clientes de ${url}`, erro);
+    async function obterClientesLista(opcoes = {}) {
+      const forceRefresh = Boolean(opcoes.forceRefresh);
+      if (!forceRefresh) {
+        if (clientesLista.length) {
+          return clientesLista;
         }
+        if (clientesCarregarPromise) {
+          return clientesCarregarPromise;
+        }
+      } else if (clientesCarregarPromise) {
+        return clientesCarregarPromise;
       }
 
-      clientesLista = [];
+      const timestamp = Date.now();
+      const fontes = forceRefresh
+        ? [
+          `../api/clientes.php?refresh=1&nocache=${timestamp}`,
+          `../cache/clientes-cache.json?nocache=${timestamp}`,
+        ]
+        : [
+          `../cache/clientes-cache.json?nocache=${timestamp}`,
+          `../api/clientes.php?nocache=${timestamp}`,
+        ];
+
+      const possuiaDados = clientesLista.length > 0;
+
+      const promessaBase = (async () => {
+        for (let i = 0; i < fontes.length; i += 1) {
+          const url = fontes[i];
+          try {
+            const resultado = await buscarClientes(url);
+            if (resultado.length) {
+              clientesLista = resultado;
+              return clientesLista;
+            }
+          } catch (erro) {
+            console.warn(`Falha ao ler clientes de ${url}`, erro);
+          }
+        }
+
+        if (!possuiaDados) {
+          clientesLista = [];
+          return clientesLista;
+        }
+
+        return clientesLista;
+      })();
+
+      const promessa = promessaBase.finally(() => {
+        if (clientesCarregarPromise === promessa) {
+          clientesCarregarPromise = null;
+        }
+      });
+
+      clientesCarregarPromise = promessa;
+      return promessa;
     }
 
-    carregarClientes();
+    async function carregarClientes(opcoes = {}) {
+      const { forceRefresh = false } = opcoes;
+      try {
+        return await obterClientesLista({ forceRefresh });
+      } catch (erro) {
+        console.error('Não foi possível carregar os clientes.', erro);
+        throw erro;
+      }
+    }
+
+    carregarClientes().catch((erro) => {
+      console.warn('Falha ao carregar clientes para recebimento.', erro);
+    });
 
     // Autocomplete
     const inputBusca = document.getElementById("clienteBusca");
