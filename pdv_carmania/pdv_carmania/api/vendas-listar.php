@@ -221,22 +221,15 @@ try {
         return strcmp($lowercase((string) $rotuloA), $lowercase((string) $rotuloB));
     });
 
-    $stmtDia = $db->prepare('SELECT COALESCE(SUM(valor_total), 0) AS total FROM vendas WHERE situacao_id = 9 AND DATE(data_hora) = :hoje');
-    $stmtDia->bindValue(':hoje', $hoje, SQLITE3_TEXT);
-    $totalDia = (float) ($stmtDia->execute()->fetchArray(SQLITE3_ASSOC)['total'] ?? 0);
-
-    $inicioMes = date('Y-m-01');
-    $fimMes = date('Y-m-t');
-    $stmtMes = $db->prepare('SELECT COALESCE(SUM(valor_total), 0) AS total FROM vendas WHERE situacao_id = 9 AND DATE(data_hora) BETWEEN :inicio AND :fim');
-    $stmtMes->bindValue(':inicio', $inicioMes, SQLITE3_TEXT);
-    $stmtMes->bindValue(':fim', $fimMes, SQLITE3_TEXT);
-    $totalMes = (float) ($stmtMes->execute()->fetchArray(SQLITE3_ASSOC)['total'] ?? 0);
+    $totalFiltrado = 0.0;
+    foreach ($vendas as $venda) {
+        $totalFiltrado += (float) ($venda['valor_total'] ?? 0);
+    }
 
     echo json_encode([
         'ok' => true,
         'resumo' => [
-            'totalDia' => round($totalDia, 2),
-            'totalMes' => round($totalMes, 2),
+            'totalDia' => round($totalFiltrado, 2),
         ],
         'vendas' => $vendas,
         'formasPagamento' => $formasDisponiveis,

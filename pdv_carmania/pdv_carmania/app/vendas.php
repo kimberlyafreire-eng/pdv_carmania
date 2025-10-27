@@ -41,10 +41,6 @@ if (!isset($_SESSION['usuario'])) {
       border: 2px solid rgba(220, 53, 69, 0.2);
       background: rgba(220, 53, 69, 0.05);
     }
-    .resumo-card-mes {
-      border: 2px solid rgba(25, 135, 84, 0.15);
-      background: rgba(25, 135, 84, 0.05);
-    }
     .filtros-card {
       background: #ffffff;
       border-radius: 16px;
@@ -179,12 +175,8 @@ if (!isset($_SESSION['usuario'])) {
   <div class="container-fluid py-4 px-3 px-md-4 px-lg-5">
     <div class="d-flex flex-column flex-lg-row gap-3 mb-4">
       <div class="resumo-card resumo-card-dia flex-fill">
-        <span class="label">Vendas do dia (status atendido)</span>
+        <span class="label">Total das vendas filtradas</span>
         <span class="valor" id="totalDia">R$ 0,00</span>
-      </div>
-      <div class="resumo-card resumo-card-mes flex-fill">
-        <span class="label">Vendas do mês (status atendido)</span>
-        <span class="valor" id="totalMes">R$ 0,00</span>
       </div>
     </div>
 
@@ -342,7 +334,6 @@ if (!isset($_SESSION['usuario'])) {
     const reciboContainer = document.getElementById('reciboContainer');
 
     const totalDiaEl = document.getElementById('totalDia');
-    const totalMesEl = document.getElementById('totalMes');
 
     const formatoMoeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -549,7 +540,6 @@ if (!isset($_SESSION['usuario'])) {
         }
 
         totalDiaEl.textContent = formatoMoeda.format(json.resumo?.totalDia || 0);
-        totalMesEl.textContent = formatoMoeda.format(json.resumo?.totalMes || 0);
         renderizarVendas(json.vendas || []);
         if (Array.isArray(json.formasPagamento)) {
           popularFormasPagamento(json.formasPagamento);
