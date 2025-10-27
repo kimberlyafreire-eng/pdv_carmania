@@ -337,6 +337,119 @@ if (!isset($_SESSION['usuario'])) {
 
     const formatoMoeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
+    const STATUS_RATE_LIMIT = new Set([429, 503]);
+    const ATRASO_REQUISICAO_INICIAL_MS = 500;
+    const ATRASO_REQUISICAO_MAX_MS = 20000;
+    const FATOR_BACKOFF = 2;
+
+    let controladorListaAtual = null;
+    let controladorDetalheAtual = null;
+    let controladorReciboAtual = null;
+
+    const botaoFiltrar = formFiltros.querySelector('button[type="submit"]');
+
+    function obterEsperaPorRetryAfter(resposta) {
+      const retryAfter = resposta.headers?.get?.('Retry-After');
+      if (!retryAfter) {
+        return null;
+      }
+      const valorNumerico = Number(retryAfter);
+      if (Number.isFinite(valorNumerico) && valorNumerico >= 0) {
+        return valorNumerico * 1000;
+      }
+      const dataAlvo = Date.parse(retryAfter);
+      if (!Number.isNaN(dataAlvo)) {
+        const agora = Date.now();
+        return Math.max(0, dataAlvo - agora);
+      }
+      return null;
+    }
+
+    function esperar(ms, signal) {
+      if (!ms || ms <= 0) {
+        return Promise.resolve();
+      }
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          limpar();
+          resolve();
+        }, ms);
+
+        function limpar() {
+          clearTimeout(timer);
+          if (signal) {
+            signal.removeEventListener('abort', aoAbortar);
+          }
+        }
+
+        function aoAbortar() {
+          limpar();
+          reject(new DOMException('A requisição foi cancelada.', 'AbortError'));
+        }
+
+        if (signal) {
+          if (signal.aborted) {
+            limpar();
+            reject(new DOMException('A requisição foi cancelada.', 'AbortError'));
+            return;
+          }
+          signal.addEventListener('abort', aoAbortar, { once: true });
+        }
+      });
+    }
+
+    async function fetchComBackoff(url, opcoes = {}) {
+      const {
+        tentativas = 4,
+        atrasoInicialMs = ATRASO_REQUISICAO_INICIAL_MS,
+        atrasoMaxMs = ATRASO_REQUISICAO_MAX_MS,
+        fatorBackoff = FATOR_BACKOFF,
+        signal,
+        ...fetchOptions
+      } = opcoes;
+
+      const totalTentativas = Math.max(1, tentativas);
+      let atrasoAtual = atrasoInicialMs;
+
+      for (let tentativa = 1; tentativa <= totalTentativas; tentativa += 1) {
+        if (signal?.aborted) {
+          throw new DOMException('A requisição foi cancelada.', 'AbortError');
+        }
+
+        try {
+          const resposta = await fetch(url, { ...fetchOptions, signal });
+          if (!STATUS_RATE_LIMIT.has(resposta.status)) {
+            return resposta;
+          }
+
+          const retryAfterMs = obterEsperaPorRetryAfter(resposta);
+          const mensagem = resposta.status === 429
+            ? 'O serviço está limitando o volume de requisições. Tentaremos novamente em instantes.'
+            : 'O serviço está temporariamente indisponível. Repetindo em alguns instantes.';
+
+          if (tentativa === totalTentativas) {
+            throw new Error(`${mensagem} (HTTP ${resposta.status})`);
+          }
+
+          const tempoEspera = retryAfterMs ?? Math.min(atrasoAtual, atrasoMaxMs);
+          await esperar(tempoEspera + Math.random() * 150, signal);
+          atrasoAtual = Math.min(atrasoAtual * fatorBackoff, atrasoMaxMs);
+          continue;
+        } catch (erro) {
+          if (erro?.name === 'AbortError') {
+            throw erro;
+          }
+          if (tentativa === totalTentativas) {
+            throw erro;
+          }
+          await esperar(Math.min(atrasoAtual, atrasoMaxMs) + Math.random() * 150, signal);
+          atrasoAtual = Math.min(atrasoAtual * fatorBackoff, atrasoMaxMs);
+        }
+      }
+
+      throw new Error('Não foi possível concluir a requisição.');
+    }
+
     function formatarDataHora(texto) {
       if (!texto) return '-';
       const partes = texto.split(' ');
@@ -508,6 +621,14 @@ if (!isset($_SESSION['usuario'])) {
       tabelaCorpo.innerHTML = '';
       semResultados.style.display = 'none';
 
+      if (botaoFiltrar) {
+        if (!botaoFiltrar.dataset.rotuloOriginal) {
+          botaoFiltrar.dataset.rotuloOriginal = botaoFiltrar.innerHTML;
+        }
+        botaoFiltrar.disabled = true;
+        botaoFiltrar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Filtrando...';
+      }
+
       const dataInicio = document.getElementById('dataInicio').value;
       const dataFim = document.getElementById('dataFim').value;
       const formaPagamento = formaPagamentoSelect.value;
@@ -529,8 +650,18 @@ if (!isset($_SESSION['usuario'])) {
         params.append('vendedor', vendedorSelecionado);
       }
 
+      const controladorAtual = new AbortController();
+      if (controladorListaAtual) {
+        controladorListaAtual.abort();
+      }
+      controladorListaAtual = controladorAtual;
+
       try {
-        const resposta = await fetch(`../api/vendas-listar.php?${params.toString()}&nocache=${Date.now()}`);
+        const resposta = await fetchComBackoff(`../api/vendas-listar.php?${params.toString()}&nocache=${Date.now()}`, {
+          signal: controladorAtual.signal,
+          tentativas: 5,
+          atrasoInicialMs: 700,
+        });
         if (!resposta.ok) {
           throw new Error(`Falha ao carregar vendas (HTTP ${resposta.status})`);
         }
@@ -548,11 +679,21 @@ if (!isset($_SESSION['usuario'])) {
           popularVendedores(json.usuarios);
         }
       } catch (erro) {
+        if (erro?.name === 'AbortError') {
+          return;
+        }
         console.error(erro);
         exibirMensagem('danger', erro.message || 'Não foi possível carregar as vendas.');
         semResultados.style.display = 'block';
       } finally {
-        loader.classList.remove('show');
+        if (controladorListaAtual === controladorAtual) {
+          loader.classList.remove('show');
+          controladorListaAtual = null;
+          if (botaoFiltrar) {
+            botaoFiltrar.disabled = false;
+            botaoFiltrar.innerHTML = botaoFiltrar.dataset.rotuloOriginal || 'Filtrar';
+          }
+        }
       }
     }
 
@@ -571,8 +712,17 @@ if (!isset($_SESSION['usuario'])) {
       listaSection.style.display = 'none';
       detalheSection.style.display = 'block';
 
+      const controladorAtual = new AbortController();
+      if (controladorDetalheAtual) {
+        controladorDetalheAtual.abort();
+      }
+      controladorDetalheAtual = controladorAtual;
+
       try {
-        const resposta = await fetch(`../api/venda-detalhes.php?id=${id}&nocache=${Date.now()}`);
+        const resposta = await fetchComBackoff(`../api/venda-detalhes.php?id=${encodeURIComponent(id)}&nocache=${Date.now()}`, {
+          signal: controladorAtual.signal,
+          tentativas: 4,
+        });
         if (!resposta.ok) {
           throw new Error(`Falha ao carregar detalhes (HTTP ${resposta.status})`);
         }
@@ -617,13 +767,24 @@ if (!isset($_SESSION['usuario'])) {
           });
         }
       } catch (erro) {
+        if (erro?.name === 'AbortError') {
+          return;
+        }
         console.error(erro);
         exibirMensagem('danger', erro.message || 'Não foi possível carregar os detalhes da venda.');
         voltarParaLista();
+      } finally {
+        if (controladorDetalheAtual === controladorAtual) {
+          controladorDetalheAtual = null;
+        }
       }
     }
 
     function voltarParaLista() {
+      if (controladorDetalheAtual) {
+        controladorDetalheAtual.abort();
+        controladorDetalheAtual = null;
+      }
       detalheSection.style.display = 'none';
       listaSection.style.display = 'block';
     }
@@ -658,8 +819,18 @@ if (!isset($_SESSION['usuario'])) {
         botao.disabled = true;
         botao.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Gerando...';
       }
+      const controladorAtual = new AbortController();
+      if (controladorReciboAtual) {
+        controladorReciboAtual.abort();
+      }
+      controladorReciboAtual = controladorAtual;
+
       try {
-        const resposta = await fetch(`../api/venda-recibo.php?id=${encodeURIComponent(id)}&nocache=${Date.now()}`);
+        const resposta = await fetchComBackoff(`../api/venda-recibo.php?id=${encodeURIComponent(id)}&nocache=${Date.now()}`, {
+          signal: controladorAtual.signal,
+          tentativas: 5,
+          atrasoInicialMs: 600,
+        });
         if (!resposta.ok) {
           throw new Error(`Falha ao gerar recibo (HTTP ${resposta.status})`);
         }
@@ -669,10 +840,16 @@ if (!isset($_SESSION['usuario'])) {
         }
         exibirRecibo(json.reciboHtml);
       } catch (erro) {
+        if (erro?.name === 'AbortError') {
+          return;
+        }
         console.error(erro);
         exibirMensagem('danger', erro.message || 'Falha ao gerar o recibo.');
         setTimeout(limparMensagem, 4000);
       } finally {
+        if (controladorReciboAtual === controladorAtual) {
+          controladorReciboAtual = null;
+        }
         if (botao) {
           botao.disabled = false;
           botao.innerHTML = labelOriginal || 'Gerar recibo';
@@ -701,6 +878,10 @@ if (!isset($_SESSION['usuario'])) {
     }
 
     function fecharRecibo() {
+      if (controladorReciboAtual) {
+        controladorReciboAtual.abort();
+        controladorReciboAtual = null;
+      }
       reciboContainer.classList.remove('ativo');
       reciboContainer.innerHTML = '';
       delete reciboContainer.dataset.htmlRecibo;
