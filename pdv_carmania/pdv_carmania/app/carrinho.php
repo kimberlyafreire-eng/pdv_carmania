@@ -1100,10 +1100,25 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
     function atualizarPreco(i, valor) {
       const v = parseFloat(valor);
-      if (Number.isNaN(v) || v < 0) {
+      const item = carrinho[i];
+      if (!item) {
         return;
       }
-      carrinho[i].preco = v;
+
+      const precoAtual = Number(item.preco) || 0;
+      if (Number.isNaN(v) || v < 0) {
+        renderizarCarrinho();
+        return;
+      }
+
+      const EPSILON = 0.0001;
+      if (v <= precoAtual + EPSILON) {
+        alert("O novo valor unitário deve ser maior que o valor atual do produto.");
+        renderizarCarrinho();
+        return;
+      }
+
+      item.preco = v;
       salvarCarrinho();
       renderizarCarrinho();
     }
