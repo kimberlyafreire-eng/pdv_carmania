@@ -193,8 +193,71 @@ if ($httpCode < 200 || $httpCode >= 300) {
     exit();
 }
 
-$clienteAtualizado = $dadosResposta['data'] ?? null;
+$clienteAtualizado = extrairClienteDosDados($dadosResposta);
+$clienteIdResposta = extrairContatoIdDosDados($dadosResposta);
+if ($clienteIdResposta === null && $contatoId !== null) {
+    $clienteIdResposta = $contatoId;
+}
+
+if (($clienteAtualizado === null || !isset($clienteAtualizado['celular']) || trim((string) $clienteAtualizado['celular']) === '')
+    && $clienteIdResposta !== null
+) {
+    $detalhesContato = buscarContatoPorId($accessToken, $clienteIdResposta);
+    if (is_array($detalhesContato)) {
+        $clienteAtualizado = $detalhesContato;
+    }
+}
+
+if ($clienteAtualizado === null && $clienteIdResposta !== null) {
+    $clienteAtualizado = [
+        'id' => $clienteIdResposta,
+    ];
+}
+
+if (is_array($clienteAtualizado)) {
+    if (!isset($clienteAtualizado['id']) || trim((string) $clienteAtualizado['id']) === '') {
+        if ($clienteIdResposta !== null) {
+            $clienteAtualizado['id'] = $clienteIdResposta;
+        } else {
+            $clienteAtualizado = null;
+        }
+    }
+}
+
 $clienteNormalizado = null;
+
+if (is_array($clienteAtualizado)) {
+    if (!isset($clienteAtualizado['nome']) || trim((string) $clienteAtualizado['nome']) === '') {
+        $clienteAtualizado['nome'] = $nome;
+    }
+
+    $clienteAtualizado['celular'] = $celular;
+
+    if ($telefone !== '') {
+        $clienteAtualizado['telefone'] = $telefone;
+    }
+
+    if ($fantasia !== '') {
+        $clienteAtualizado['fantasia'] = $fantasia;
+    }
+
+    if ($documento !== '') {
+        $clienteAtualizado['numeroDocumento'] = $documento;
+    }
+
+    $enderecoPayload = $payload['endereco']['geral'] ?? null;
+    if (is_array($enderecoPayload) && !empty($enderecoPayload)) {
+        if (!isset($clienteAtualizado['endereco']) || !is_array($clienteAtualizado['endereco'])) {
+            $clienteAtualizado['endereco'] = [];
+        }
+        if (!isset($clienteAtualizado['endereco']['geral']) || !is_array($clienteAtualizado['endereco']['geral'])) {
+            $clienteAtualizado['endereco']['geral'] = [];
+        }
+        $clienteAtualizado['endereco']['geral'] = array_merge($clienteAtualizado['endereco']['geral'], $enderecoPayload);
+    }
+
+    $clienteAtualizado['tipo'] = $tipoPessoa;
+}
 
 // Atualiza o cache local de clientes quando possível.
 if (is_array($clienteAtualizado)) {
@@ -368,4 +431,114 @@ function scheduleClientesRefresh(string $url, string $sessionName, string $sessi
         $url,
         $cookieHeader
     );
+}
+
+/**
+ * Tenta localizar os dados completos de um contato em estruturas variadas da API.
+ */
+function extrairClienteDosDados($dados): ?array
+{
+    if (!is_array($dados)) {
+        return null;
+    }
+
+    if (normalizarClienteParaResposta($dados) !== null) {
+        return $dados;
+    }
+
+    foreach ($dados as $valor) {
+        if (!is_array($valor)) {
+            continue;
+        }
+
+        $encontrado = extrairClienteDosDados($valor);
+        if ($encontrado !== null) {
+            return $encontrado;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Recupera o ID de contato presente em diferentes formatos de resposta.
+ */
+function extrairContatoIdDosDados($dados): ?string
+{
+    if (!is_array($dados)) {
+        return null;
+    }
+
+    if (isset($dados['id'])) {
+        $id = trim((string) $dados['id']);
+        if ($id !== '') {
+            return $id;
+        }
+    }
+
+    foreach ($dados as $valor) {
+        if (!is_array($valor)) {
+            continue;
+        }
+
+        $id = extrairContatoIdDosDados($valor);
+        if ($id !== null) {
+            return $id;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Consulta o Bling para obter os detalhes completos de um contato específico.
+ */
+function buscarContatoPorId(string $accessToken, string $contatoId): ?array
+{
+    $contatoId = trim($contatoId);
+    if ($contatoId === '') {
+        return null;
+    }
+
+    $url = 'https://www.bling.com.br/Api/v3/contatos/' . urlencode($contatoId);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "Authorization: Bearer {$accessToken}",
+            'Accept: application/json',
+        ],
+        CURLOPT_TIMEOUT => 30,
+    ]);
+
+    $resposta = curl_exec($ch);
+    if ($resposta === false) {
+        $erro = curl_error($ch);
+        curl_close($ch);
+        error_log('[salvar-cliente.php] Falha ao buscar contato ' . $contatoId . ': ' . $erro);
+        return null;
+    }
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode < 200 || $httpCode >= 300) {
+        error_log('[salvar-cliente.php] Erro ao buscar contato ' . $contatoId . ': HTTP ' . $httpCode . ' ' . $resposta);
+        return null;
+    }
+
+    $dados = json_decode($resposta, true);
+    if (!is_array($dados)) {
+        error_log('[salvar-cliente.php] Resposta inválida ao buscar contato ' . $contatoId);
+        return null;
+    }
+
+    $contato = extrairClienteDosDados($dados);
+    if (!is_array($contato)) {
+        error_log('[salvar-cliente.php] Não foi possível extrair dados do contato ' . $contatoId);
+        return null;
+    }
+
+    return $contato;
 }
