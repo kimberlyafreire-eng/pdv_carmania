@@ -33,6 +33,42 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       background-color: #dc3545;
     }
 
+    .cliente-destaque {
+      background: #fff5f5;
+      border-bottom: 1px solid rgba(220, 53, 69, 0.15);
+      box-shadow: 0 6px 18px rgba(220, 53, 69, 0.08);
+    }
+
+    .cliente-destaque .cliente-wrapper {
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    @media (min-width: 576px) {
+      .cliente-destaque .cliente-wrapper {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+      }
+    }
+
+    .cliente-destaque .cliente-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6c757d;
+      font-weight: 600;
+    }
+
+    .cliente-destaque .cliente-nome {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      font-weight: 700;
+      color: #b02a37;
+      word-break: break-word;
+    }
+
     #telaPagamento {
       flex: 1;
       display: flex;
@@ -151,9 +187,9 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       background: #ffffff;
       border: 2px solid #dc3545;
       border-radius: 14px;
-      padding: 0;
       width: 100%;
-      aspect-ratio: 1;
+      min-height: 108px;
+      padding: 1rem 0.75rem;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -163,8 +199,9 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       cursor: pointer;
       user-select: none;
-      font-size: 1.05rem;
-      padding-inline: 0.35rem;
+      font-size: 1.15rem;
+      line-height: 1.35;
+      padding-inline: 0.75rem;
     }
 
     .forma-card:hover,
@@ -258,7 +295,7 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       }
 
       .forma-card {
-        min-height: 140px;
+        min-height: 120px;
       }
 
       .recibo-area {
@@ -293,6 +330,13 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     <span class="navbar-text text-white fw-bold">Pagamento Crediário</span>
     <div></div>
   </nav>
+
+  <div class="cliente-destaque">
+    <div class="container cliente-wrapper">
+      <span class="cliente-label">Cliente selecionado</span>
+      <span class="cliente-nome" id="clienteSelecionadoNome">Nenhum cliente selecionado</span>
+    </div>
+  </div>
 
   <main class="container-fluid" id="telaPagamento">
     <div class="container pagamento-conteudo">
@@ -370,9 +414,24 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
 
     const cliente = JSON.parse(localStorage.getItem("clienteRecebimento") || "null");
     const saldoData = JSON.parse(localStorage.getItem("saldoCrediario") || "null");
+    const clienteNomeEl = document.getElementById("clienteSelecionadoNome");
 
     const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
     const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
+
+    function atualizarClienteDestaque(infoCliente) {
+      if (!clienteNomeEl) return;
+      const nome = typeof infoCliente?.nome === "string" ? infoCliente.nome.trim() : "";
+      if (nome) {
+        clienteNomeEl.textContent = nome;
+        clienteNomeEl.classList.remove("text-muted");
+      } else {
+        clienteNomeEl.textContent = "Nenhum cliente selecionado";
+        clienteNomeEl.classList.add("text-muted");
+      }
+    }
+
+    atualizarClienteDestaque(cliente);
 
     function recuperarDeposito(chave) {
       const bruto = localStorage.getItem(chave);
