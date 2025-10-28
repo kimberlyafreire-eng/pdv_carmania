@@ -379,6 +379,19 @@ function normalizarDadosCliente(array $cliente): array
 
     $codigo = isset($cliente['codigo']) ? trim((string) $cliente['codigo']) : null;
     $celular = isset($cliente['celular']) ? trim((string) $cliente['celular']) : null;
+    if ($celular === '') {
+        $celular = null;
+    }
+
+    $contatosCliente = extrairContatosDoCliente($cliente);
+
+    if ($celular === null) {
+        $contatoCelular = localizarContatoPreferencial($contatosCliente, ['CELULAR', 'WHATSAPP', 'MOBILE']);
+        if ($contatoCelular !== null) {
+            $celular = $contatoCelular['formatado'];
+        }
+    }
+
     $celularNormalizado = null;
     if ($celular !== null && $celular !== '') {
         $normalizado = normalizarTelefoneComparacao($celular);
@@ -386,7 +399,18 @@ function normalizarDadosCliente(array $cliente): array
             $celularNormalizado = $normalizado;
         }
     }
+
     $telefone = isset($cliente['telefone']) ? trim((string) $cliente['telefone']) : null;
+    if ($telefone === '') {
+        $telefone = null;
+    }
+
+    if ($telefone === null) {
+        $contatoTelefone = localizarContatoPreferencial($contatosCliente, ['TELEFONE', 'FIXO'], $celularNormalizado !== null ? [$celularNormalizado] : []);
+        if ($contatoTelefone !== null) {
+            $telefone = $contatoTelefone['formatado'];
+        }
+    }
 
     $endereco = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? []);
     $rua = isset($endereco['endereco']) ? trim((string) $endereco['endereco']) : null;
@@ -470,14 +494,46 @@ function normalizarClienteParaResposta(array $cliente): ?array
         $codigo = null;
     }
 
+    $contatosCliente = extrairContatosDoCliente($cliente);
+
     $celular = isset($cliente['celular']) ? trim((string) $cliente['celular']) : null;
     if ($celular === '') {
         $celular = null;
     }
 
+    if ($celular === null) {
+        $contatoCelular = localizarContatoPreferencial($contatosCliente, ['CELULAR', 'WHATSAPP', 'MOBILE']);
+        if ($contatoCelular !== null) {
+            $celular = $contatoCelular['formatado'];
+        }
+    }
+
+    if ($celular !== null) {
+        $celular = formatarTelefonePadrao($celular);
+    }
+
     $telefone = isset($cliente['telefone']) ? trim((string) $cliente['telefone']) : null;
     if ($telefone === '') {
         $telefone = null;
+    }
+
+    if ($telefone === null) {
+        $normalizadosIgnorados = [];
+        if ($celular !== null) {
+            $normalizadoCelular = normalizarTelefoneComparacao($celular);
+            if ($normalizadoCelular !== '') {
+                $normalizadosIgnorados[] = $normalizadoCelular;
+            }
+        }
+
+        $contatoTelefone = localizarContatoPreferencial($contatosCliente, ['TELEFONE', 'FIXO'], $normalizadosIgnorados);
+        if ($contatoTelefone !== null) {
+            $telefone = $contatoTelefone['formatado'];
+        }
+    }
+
+    if ($telefone !== null) {
+        $telefone = formatarTelefonePadrao($telefone);
     }
 
     $enderecoFonte = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? null);
@@ -584,6 +640,8 @@ function montarEstruturaCliente(array $linha): array
     }
     if (!empty($linha['celular'])) {
         $cliente['celular'] = $linha['celular'];
+    } elseif (!empty($linha['celular_normalizado'])) {
+        $cliente['celular'] = formatarTelefonePadrao($linha['celular_normalizado']);
     }
     if (!empty($linha['telefone'])) {
         $cliente['telefone'] = $linha['telefone'];
@@ -620,6 +678,32 @@ function formatarCepSaida(string $cep): string
         return substr($digitos, 0, 5) . '-' . substr($digitos, 5);
     }
     return $cep;
+}
+
+/**
+ * Formata números de telefone/celular para o padrão (DD) XXXX-XXXX/XXXXX-XXXX.
+ */
+function formatarTelefonePadrao(string $numero): string
+{
+    $numero = trim($numero);
+    if ($numero === '') {
+        return '';
+    }
+
+    $digitos = preg_replace('/\D+/', '', $numero);
+    if ($digitos === '') {
+        return $numero;
+    }
+
+    if (strlen($digitos) === 11) {
+        return sprintf('(%s) %s-%s', substr($digitos, 0, 2), substr($digitos, 2, 5), substr($digitos, 7));
+    }
+
+    if (strlen($digitos) === 10) {
+        return sprintf('(%s) %s-%s', substr($digitos, 0, 2), substr($digitos, 2, 4), substr($digitos, 6));
+    }
+
+    return $numero;
 }
 
 /**
@@ -668,4 +752,148 @@ function normalizarTelefoneComparacao($numero): string
     }
 
     return $digitos;
+}
+
+/**
+ * Extrai uma lista plana de contatos presentes na estrutura do cliente.
+ */
+function extrairContatosDoCliente($cliente): array
+{
+    if (!is_array($cliente)) {
+        return [];
+    }
+
+    $fontesIniciais = [];
+    foreach (['contatos', 'telefones', 'contato', 'formasContato'] as $chave) {
+        if (isset($cliente[$chave])) {
+            $fontesIniciais[] = $cliente[$chave];
+        }
+    }
+
+    $pilha = $fontesIniciais;
+    $contatos = [];
+
+    while (!empty($pilha)) {
+        $atual = array_pop($pilha);
+        if (!is_array($atual)) {
+            continue;
+        }
+
+        if (isset($atual['data']) && is_array($atual['data'])) {
+            $pilha[] = $atual['data'];
+            continue;
+        }
+
+        $temNumero = false;
+        foreach (['contato', 'numero', 'valor', 'telefone'] as $campoNumero) {
+            if (isset($atual[$campoNumero]) && trim((string)$atual[$campoNumero]) !== '') {
+                $temNumero = true;
+                break;
+            }
+        }
+
+        if ($temNumero) {
+            $contatos[] = $atual;
+            continue;
+        }
+
+        foreach ($atual as $subValor) {
+            if (is_array($subValor)) {
+                $pilha[] = $subValor;
+            }
+        }
+    }
+
+    return $contatos;
+}
+
+/**
+ * Localiza o primeiro contato que corresponda aos tipos desejados.
+ */
+function localizarContatoPreferencial(array $contatos, array $tiposPrioritarios = [], array $normalizadosIgnorados = []): ?array
+{
+    if (empty($contatos)) {
+        return null;
+    }
+
+    $tiposPrioritariosNormalizados = [];
+    foreach ($tiposPrioritarios as $tipo) {
+        $tipo = mb_strtoupper(trim((string)$tipo));
+        if ($tipo !== '') {
+            $tiposPrioritariosNormalizados[$tipo] = true;
+        }
+    }
+
+    $ignorar = [];
+    foreach ($normalizadosIgnorados as $valor) {
+        $normalizado = normalizarTelefoneComparacao($valor);
+        if ($normalizado !== '') {
+            $ignorar[$normalizado] = true;
+        }
+    }
+
+    $candidatosPrioritarios = [];
+    $candidatos = [];
+
+    foreach ($contatos as $contato) {
+        if (!is_array($contato)) {
+            continue;
+        }
+
+        $numeroBruto = '';
+        foreach (['contato', 'numero', 'valor', 'telefone'] as $campoNumero) {
+            if (isset($contato[$campoNumero])) {
+                $numeroBruto = trim((string)$contato[$campoNumero]);
+                if ($numeroBruto !== '') {
+                    break;
+                }
+            }
+        }
+
+        if ($numeroBruto === '') {
+            continue;
+        }
+
+        $normalizado = normalizarTelefoneComparacao($numeroBruto);
+        if ($normalizado === '' || isset($ignorar[$normalizado])) {
+            continue;
+        }
+
+        $registro = [
+            'bruto' => $numeroBruto,
+            'normalizado' => $normalizado,
+            'formatado' => formatarTelefonePadrao($numeroBruto),
+        ];
+
+        $tipoContato = '';
+        foreach (['tipo', 'descricao', 'tipoContato'] as $campoTipo) {
+            if (isset($contato[$campoTipo])) {
+                $tipoContato = mb_strtoupper(trim((string)$contato[$campoTipo]));
+                if ($tipoContato !== '') {
+                    break;
+                }
+            }
+        }
+
+        if (!empty($tiposPrioritariosNormalizados) && $tipoContato !== '' && isset($tiposPrioritariosNormalizados[$tipoContato])) {
+            if (!isset($candidatosPrioritarios[$normalizado])) {
+                $candidatosPrioritarios[$normalizado] = $registro;
+            }
+            continue;
+        }
+
+        if (!isset($candidatos[$normalizado])) {
+            $candidatos[$normalizado] = $registro;
+        }
+    }
+
+    if (!empty($candidatosPrioritarios)) {
+        return reset($candidatosPrioritarios);
+    }
+
+    if (!empty($candidatos)) {
+        return reset($candidatos);
+    }
+
+    return null;
 }
