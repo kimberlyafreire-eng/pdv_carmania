@@ -308,6 +308,26 @@ function buscarClientesLocalmente(SQLite3 $db): array
 }
 
 /**
+ * Retorna a quantidade de clientes registrados no banco local.
+ */
+function contarClientes(SQLite3 $db): int
+{
+    $resultado = $db->query('SELECT COUNT(*) AS total FROM clientes');
+    if ($resultado === false) {
+        return 0;
+    }
+
+    $linha = $resultado->fetchArray(SQLITE3_ASSOC) ?: [];
+    $resultado->finalize();
+
+    if (!isset($linha['total'])) {
+        return 0;
+    }
+
+    return (int) $linha['total'];
+}
+
+/**
  * Busca um cliente existente a partir do número de celular informado.
  */
 function encontrarClientePorCelular(SQLite3 $db, string $celular, ?string $ignorarId = null): ?array

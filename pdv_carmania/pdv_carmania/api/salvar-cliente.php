@@ -12,6 +12,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/lib/token-helper.php';
 require_once __DIR__ . '/lib/contatos-helper.php';
 require_once __DIR__ . '/lib/clientes-db.php';
+require_once __DIR__ . '/lib/clientes-sync.php';
 
 $dadosEntrada = json_decode(file_get_contents('php://input'), true);
 if (!is_array($dadosEntrada)) {
@@ -48,12 +49,43 @@ if ($erros) {
     exit();
 }
 
+$cacheClientes = __DIR__ . '/../cache/clientes-cache.json';
+$db = null;
+$clienteExistente = null;
+$accessToken = null;
+
 try {
     $db = getClientesDb();
-    importarClientesCache($db, __DIR__ . '/../cache/clientes-cache.json');
-    $clienteExistente = encontrarClientePorCelular($db, $celular, $contatoId);
-    $db->close();
+    importarClientesCache($db, $cacheClientes);
+
+    $totalClientes = contarClientes($db);
+    if ($totalClientes > 0) {
+        $clienteExistente = encontrarClientePorCelular($db, $celular, $contatoId);
+    }
+
+    $deveSincronizar = $totalClientes === 0;
+    if (!$deveSincronizar && $clienteExistente === null) {
+        $ultimaAtualizacaoCache = is_file($cacheClientes) ? @filemtime($cacheClientes) : false;
+        if ($ultimaAtualizacaoCache === false || $ultimaAtualizacaoCache < (time() - 600)) {
+            $deveSincronizar = true;
+        }
+    }
+
+    if ($clienteExistente === null && $deveSincronizar) {
+        if ($accessToken === null) {
+            $accessToken = getAccessToken();
+        }
+        if (!$accessToken) {
+            throw new RuntimeException('Token de acesso inválido.');
+        }
+
+        sincronizarClientesComBling($db, $accessToken, $cacheClientes);
+        $clienteExistente = encontrarClientePorCelular($db, $celular, $contatoId);
+    }
 } catch (Throwable $e) {
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     error_log('[salvar-cliente.php] Falha ao validar celular duplicado: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['erro' => 'Não foi possível validar o celular informado.']);
@@ -61,6 +93,9 @@ try {
 }
 
 if ($clienteExistente !== null) {
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     http_response_code(409);
     echo json_encode(['erro' => 'Já tem cliente cadastrado com esse número de celular.']);
     exit();
@@ -73,6 +108,9 @@ try {
         throw new RuntimeException('Tipo de contato "Cliente" não encontrado no cache.');
     }
 } catch (RuntimeException $e) {
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     http_response_code(500);
     echo json_encode(['erro' => $e->getMessage()]);
     exit();
@@ -133,13 +171,21 @@ if (!empty($endereco)) {
 
 $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 if ($payloadJson === false) {
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     http_response_code(500);
     echo json_encode(['erro' => 'Não foi possível preparar os dados para envio.']);
     exit();
 }
 
-$accessToken = getAccessToken();
+if ($accessToken === null) {
+    $accessToken = getAccessToken();
+}
 if (!$accessToken) {
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     http_response_code(500);
     echo json_encode(['erro' => 'Token de acesso inválido.']);
     exit();
@@ -174,6 +220,9 @@ $resposta = curl_exec($ch);
 if ($resposta === false) {
     $erro = curl_error($ch);
     curl_close($ch);
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     http_response_code(500);
     echo json_encode(['erro' => 'Falha ao comunicar com o Bling: ' . $erro]);
     exit();
@@ -190,6 +239,9 @@ if ($httpCode < 200 || $httpCode >= 300) {
         'erro' => 'Não foi possível salvar o cliente.',
         'detalhes' => $dadosResposta ?? $resposta,
     ], JSON_UNESCAPED_UNICODE);
+    if ($db instanceof SQLite3) {
+        $db->close();
+    }
     exit();
 }
 
@@ -262,7 +314,6 @@ if (is_array($clienteAtualizado)) {
 // Atualiza o cache local de clientes quando possível.
 if (is_array($clienteAtualizado)) {
     $clienteNormalizado = normalizarClienteParaResposta($clienteAtualizado);
-    $cacheClientes = __DIR__ . '/../cache/clientes-cache.json';
     $clientes = ['data' => []];
 
     if (file_exists($cacheClientes)) {
@@ -351,9 +402,10 @@ if (is_array($clienteAtualizado)) {
     }
 
     try {
-        $db = getClientesDb();
+        if (!$db instanceof SQLite3) {
+            $db = getClientesDb();
+        }
         upsertCliente($db, $clienteAtualizado);
-        $db->close();
     } catch (Throwable $e) {
         error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
     }
@@ -382,6 +434,10 @@ session_write_close();
 if (function_exists('fastcgi_finish_request')) {
     // Libera a resposta para o cliente enquanto a atualização roda no shutdown handler.
     fastcgi_finish_request();
+}
+
+if ($db instanceof SQLite3) {
+    $db->close();
 }
 
 /**
