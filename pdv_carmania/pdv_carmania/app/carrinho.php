@@ -444,7 +444,7 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <input type="text" id="clienteBusca" class="form-control" placeholder="Digite o nome do cliente">
+          <input type="text" id="clienteBusca" class="form-control" placeholder="Digite o nome ou celular do cliente">
           <div id="listaClientes" class="list-group mt-2"></div>
         </div>
         <div class="modal-footer">
@@ -515,6 +515,20 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
     let clientesCarregandoPromise = null;
     let clientesCacheExpirado = false;
     let clientesCacheUltimaAtualizacao = 0;
+
+    function removerAcentos(texto) {
+      return String(texto || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function normalizarTexto(texto) {
+      return removerAcentos(texto).toLowerCase();
+    }
+
+    function extrairDigitos(valor) {
+      return String(valor || '').replace(/\D+/g, '');
+    }
 
     function atualizarClienteSelecionadoSeIncompleto() {
       if (!clienteSelecionado || !clienteSelecionado.id) return;
@@ -818,17 +832,42 @@ window.ESTOQUE_PADRAO_ID = " . json_encode($estoquePadraoId) . ";
 
     document.addEventListener("input", (e) => {
       if (e.target.id !== "clienteBusca") return;
-      const busca = e.target.value.toLowerCase();
+      const termoBruto = e.target.value.trim();
+      const buscaTexto = normalizarTexto(termoBruto);
+      const buscaNumerica = extrairDigitos(termoBruto);
+      const contemLetras = /[a-z]/i.test(removerAcentos(termoBruto));
+      const temBuscaTexto = contemLetras && buscaTexto.length >= 2;
+      const temBuscaNumerica = buscaNumerica.length >= 3;
       const lista = document.getElementById("listaClientes");
       delete e.target.dataset.id;
       lista.innerHTML = "";
-      if (busca.length < 2) return;
+      if (!temBuscaTexto && !temBuscaNumerica) return;
       if (!clientesLista.length) return;
-      const resultados = clientesLista.filter(c => c.nome.toLowerCase().includes(busca)).slice(0, 6);
+      const resultados = clientesLista.filter((cli) => {
+        const nomeNormalizado = normalizarTexto(cli.nome);
+        const documentoTexto = normalizarTexto(cli.numeroDocumento || '');
+        const documentoNumerico = extrairDigitos(cli.numeroDocumento || '');
+        const celularNumerico = extrairDigitos(cli.celular || '');
+        const telefoneNumerico = extrairDigitos(cli.telefone || '');
+
+        const correspondeTexto = temBuscaTexto
+          ? nomeNormalizado.includes(buscaTexto) || documentoTexto.includes(buscaTexto)
+          : false;
+        const correspondeNumerico = temBuscaNumerica
+          ? documentoNumerico.includes(buscaNumerica)
+            || celularNumerico.includes(buscaNumerica)
+            || telefoneNumerico.includes(buscaNumerica)
+          : false;
+
+        return correspondeTexto || correspondeNumerico;
+      }).slice(0, 6);
       resultados.forEach(cliente => {
         const item = document.createElement("button");
         item.className = "list-group-item list-group-item-action";
-        item.textContent = cliente.nome;
+        const infoContato = cliente.celular || cliente.telefone || cliente.numeroDocumento || '';
+        item.innerHTML = infoContato
+          ? `<div class="fw-semibold">${cliente.nome}</div><small class="text-muted">${infoContato}</small>`
+          : cliente.nome;
         item.onclick = () => {
           document.getElementById("clienteBusca").value = cliente.nome;
           document.getElementById("clienteBusca").dataset.id = cliente.id;

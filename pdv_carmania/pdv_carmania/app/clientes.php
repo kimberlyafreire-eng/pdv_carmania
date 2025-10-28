@@ -104,7 +104,7 @@ if (!isset($_SESSION['usuario'])) {
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-column flex-sm-row gap-2">
           <label for="buscaCliente" class="form-label mb-0 fw-semibold">Buscar cliente</label>
-          <small class="text-muted">Digite nome, CPF/CNPJ ou código para localizar rapidamente.</small>
+          <small class="text-muted">Digite nome, CPF/CNPJ, celular ou código para localizar rapidamente.</small>
         </div>
         <div class="input-group">
           <span class="input-group-text">🔍</span>
@@ -198,6 +198,20 @@ if (!isset($_SESSION['usuario'])) {
     const btnRecarregar = document.getElementById('btnRecarregar');
     const btnSaldoNegativo = document.getElementById('btnSaldoNegativo');
     const btnVoltarLista = document.getElementById('btnVoltarLista');
+
+    function removerAcentos(texto) {
+      return String(texto || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function normalizarTexto(texto) {
+      return removerAcentos(texto).toLowerCase();
+    }
+
+    function extrairDigitos(valor) {
+      return String(valor || '').replace(/\D+/g, '');
+    }
     const listaWrapper = document.getElementById('listaWrapper');
     const formWrapper = document.getElementById('formWrapper');
     const tituloFormulario = document.getElementById('tituloFormulario');
@@ -595,14 +609,34 @@ if (!isset($_SESSION['usuario'])) {
         return;
       }
 
-      const termo = filtro.trim().toLowerCase();
+      const termo = filtro.trim();
+      const termoTexto = normalizarTexto(termo);
+      const termoNumerico = extrairDigitos(termo);
+      const contemLetras = /[a-z]/i.test(removerAcentos(termo));
+      const temBuscaTexto = contemLetras && termoTexto.length > 0;
+      const temBuscaNumerica = termoNumerico.length >= 3;
       let resultados = clientes;
-      if (termo) {
+      if (temBuscaTexto || temBuscaNumerica) {
         resultados = clientes.filter(cliente => {
-          const nome = (cliente.nome || '').toLowerCase();
-          const documento = (cliente.numeroDocumento || '').toLowerCase();
-          const codigo = (cliente.codigo || '').toLowerCase();
-          return nome.includes(termo) || documento.includes(termo) || codigo.includes(termo);
+          const nomeNormalizado = normalizarTexto(cliente.nome || '');
+          const documentoTexto = normalizarTexto(cliente.numeroDocumento || '');
+          const codigoNormalizado = normalizarTexto(cliente.codigo || '');
+          const documentoNumerico = extrairDigitos(cliente.numeroDocumento || '');
+          const celularNumerico = extrairDigitos(cliente.celular || '');
+          const telefoneNumerico = extrairDigitos(cliente.telefone || '');
+
+          const correspondeTexto = temBuscaTexto
+            ? nomeNormalizado.includes(termoTexto)
+              || documentoTexto.includes(termoTexto)
+              || codigoNormalizado.includes(termoTexto)
+            : false;
+          const correspondeNumerico = temBuscaNumerica
+            ? documentoNumerico.includes(termoNumerico)
+              || celularNumerico.includes(termoNumerico)
+              || telefoneNumerico.includes(termoNumerico)
+            : false;
+
+          return correspondeTexto || correspondeNumerico;
         });
       }
 
