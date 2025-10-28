@@ -35,6 +35,7 @@ function getClientesDb(): SQLite3
         tipo TEXT,
         numero_documento TEXT,
         celular TEXT,
+        celular_normalizado TEXT,
         telefone TEXT,
         codigo TEXT,
         rua TEXT,
@@ -47,11 +48,84 @@ function getClientesDb(): SQLite3
 
     $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome COLLATE NOCASE)');
 
+    garantirEstruturaClientes($db);
+
     return $db;
 }
 
 /**
+ * Garante que a tabela de clientes possua as colunas e índices necessários.
+ */
+function garantirEstruturaClientes(SQLite3 $db): void
+{
+    $colunaCelularNormalizadoExiste = false;
+    $resultado = $db->query('PRAGMA table_info(clientes)');
+    if ($resultado instanceof SQLite3Result) {
+        while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+            if (isset($linha['name']) && $linha['name'] === 'celular_normalizado') {
+                $colunaCelularNormalizadoExiste = true;
+                break;
+            }
+        }
+        $resultado->finalize();
+    }
+
+    if (!$colunaCelularNormalizadoExiste) {
+        $db->exec('ALTER TABLE clientes ADD COLUMN celular_normalizado TEXT');
+    }
+
+    $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_celular_normalizado ON clientes(celular_normalizado)');
+
+    atualizarCelularesNormalizadosPendentes($db);
+}
+
+/**
+ * Atualiza os registros que ainda não possuem o celular normalizado preenchido.
+ */
+function atualizarCelularesNormalizadosPendentes(SQLite3 $db): void
+{
+    $resultado = $db->query('SELECT id, celular, celular_normalizado FROM clientes WHERE celular IS NOT NULL AND celular <> "" AND (celular_normalizado IS NULL OR celular_normalizado = "")');
+    if ($resultado === false) {
+        return;
+    }
+
+    while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+        if (!is_array($linha) || !isset($linha['id'])) {
+            continue;
+        }
+
+        $celularNormalizado = normalizarTelefoneComparacao($linha['celular'] ?? null);
+        if ($celularNormalizado === '') {
+            $celularNormalizado = null;
+        }
+
+        $stmt = $db->prepare('UPDATE clientes SET celular_normalizado = :celular_normalizado WHERE id = :id');
+        if (!$stmt instanceof SQLite3Stmt) {
+            continue;
+        }
+
+        if ($celularNormalizado === null) {
+            $stmt->bindValue(':celular_normalizado', null, SQLITE3_NULL);
+        } else {
+            $stmt->bindValue(':celular_normalizado', $celularNormalizado, SQLITE3_TEXT);
+        }
+
+        $stmt->bindValue(':id', (string) $linha['id'], SQLITE3_TEXT);
+
+        $exec = $stmt->execute();
+        if ($exec instanceof SQLite3Result) {
+            $exec->finalize();
+        }
+
+        $stmt->close();
+    }
+
+    $resultado->finalize();
+}
+
+/**
  * Realiza o upsert de um único cliente no banco de dados local.
+
  */
 function upsertCliente(SQLite3 $db, array $cliente): void
 {
@@ -59,15 +133,16 @@ function upsertCliente(SQLite3 $db, array $cliente): void
 
     if (!$stmt instanceof SQLite3Stmt) {
         $stmt = $db->prepare('INSERT INTO clientes (
-                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
+                id, nome, tipo, numero_documento, celular, celular_normalizado, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
             ) VALUES (
-                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :bairro, :cidade, :estado, :cep, :atualizado_em
+                :id, :nome, :tipo, :numero_documento, :celular, :celular_normalizado, :telefone, :codigo, :rua, :bairro, :cidade, :estado, :cep, :atualizado_em
             )
             ON CONFLICT(id) DO UPDATE SET
                 nome = excluded.nome,
                 tipo = excluded.tipo,
                 numero_documento = excluded.numero_documento,
                 celular = excluded.celular,
+                celular_normalizado = excluded.celular_normalizado,
                 telefone = excluded.telefone,
                 codigo = excluded.codigo,
                 rua = excluded.rua,
@@ -90,6 +165,7 @@ function upsertCliente(SQLite3 $db, array $cliente): void
     bindValorOuNulo($stmt, ':tipo', $dados['tipo']);
     bindValorOuNulo($stmt, ':numero_documento', $dados['numero_documento']);
     bindValorOuNulo($stmt, ':celular', $dados['celular']);
+    bindValorOuNulo($stmt, ':celular_normalizado', $dados['celular_normalizado']);
     bindValorOuNulo($stmt, ':telefone', $dados['telefone']);
     bindValorOuNulo($stmt, ':codigo', $dados['codigo']);
     bindValorOuNulo($stmt, ':rua', $dados['rua']);
@@ -232,37 +308,42 @@ function encontrarClientePorCelular(SQLite3 $db, string $celular, ?string $ignor
         return null;
     }
 
-    $clienteEncontrado = null;
-    $resultado = $db->query('SELECT * FROM clientes WHERE celular IS NOT NULL AND celular <> ""');
-    if ($resultado === false) {
+    $sql = 'SELECT * FROM clientes WHERE celular_normalizado = :celular';
+    $ignorarIdNormalizado = null;
+    if ($ignorarId !== null) {
+        $ignorarIdNormalizado = trim((string) $ignorarId);
+        if ($ignorarIdNormalizado === '') {
+            $ignorarIdNormalizado = null;
+        }
+    }
+
+    if ($ignorarIdNormalizado !== null) {
+        $sql .= ' AND id <> :ignorar_id';
+    }
+
+    $sql .= ' LIMIT 1';
+
+    $stmt = $db->prepare($sql);
+    if (!$stmt instanceof SQLite3Stmt) {
         return null;
     }
 
-    while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
-        if (!is_array($linha)) {
-            continue;
-        }
-
-        $celularLinha = normalizarTelefoneComparacao($linha['celular'] ?? null);
-        if ($celularLinha === '') {
-            continue;
-        }
-
-        if ($celularLinha !== $celularNormalizado) {
-            continue;
-        }
-
-        if ($ignorarId !== null && isset($linha['id']) && (string) $linha['id'] === $ignorarId) {
-            continue;
-        }
-
-        $clienteEncontrado = $linha;
-        break;
+    $stmt->bindValue(':celular', $celularNormalizado, SQLITE3_TEXT);
+    if ($ignorarIdNormalizado !== null) {
+        $stmt->bindValue(':ignorar_id', $ignorarIdNormalizado, SQLITE3_TEXT);
     }
 
-    $resultado->finalize();
+    $resultado = $stmt->execute();
+    if ($resultado === false) {
+        $stmt->close();
+        return null;
+    }
 
-    return $clienteEncontrado;
+    $linha = $resultado->fetchArray(SQLITE3_ASSOC) ?: null;
+    $resultado->finalize();
+    $stmt->close();
+
+    return is_array($linha) ? $linha : null;
 }
 
 /**
@@ -289,6 +370,13 @@ function normalizarDadosCliente(array $cliente): array
 
     $codigo = isset($cliente['codigo']) ? trim((string) $cliente['codigo']) : null;
     $celular = isset($cliente['celular']) ? trim((string) $cliente['celular']) : null;
+    $celularNormalizado = null;
+    if ($celular !== null && $celular !== '') {
+        $normalizado = normalizarTelefoneComparacao($celular);
+        if ($normalizado !== '') {
+            $celularNormalizado = $normalizado;
+        }
+    }
     $telefone = isset($cliente['telefone']) ? trim((string) $cliente['telefone']) : null;
 
     $endereco = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? []);
@@ -308,6 +396,7 @@ function normalizarDadosCliente(array $cliente): array
         'tipo' => $tipo,
         'numero_documento' => $numeroDocumento,
         'celular' => $celular,
+        'celular_normalizado' => $celularNormalizado,
         'telefone' => $telefone,
         'codigo' => $codigo,
         'rua' => $rua,

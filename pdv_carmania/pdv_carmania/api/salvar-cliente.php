@@ -50,6 +50,7 @@ if ($erros) {
 
 try {
     $db = getClientesDb();
+    importarClientesCache($db, __DIR__ . '/../cache/clientes-cache.json');
     $clienteExistente = encontrarClientePorCelular($db, $celular, $contatoId);
     $db->close();
 } catch (Throwable $e) {
