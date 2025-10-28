@@ -24,6 +24,7 @@ $nome = trim($dadosEntrada['nome'] ?? '');
 $erros = [];
 $tipoPessoaEntrada = strtoupper(substr(trim($dadosEntrada['tipoPessoa'] ?? ''), 0, 1));
 $tipoPessoa = 'F';
+$contatoId = isset($dadosEntrada['id']) && $dadosEntrada['id'] !== '' ? trim((string)$dadosEntrada['id']) : null;
 if ($tipoPessoaEntrada !== '') {
     if (in_array($tipoPessoaEntrada, ['F', 'J'], true)) {
         $tipoPessoa = $tipoPessoaEntrada;
@@ -44,6 +45,23 @@ if ($celular === '') {
 if ($erros) {
     http_response_code(422);
     echo json_encode(['erro' => implode(' ', $erros)]);
+    exit();
+}
+
+try {
+    $db = getClientesDb();
+    $clienteExistente = encontrarClientePorCelular($db, $celular, $contatoId);
+    $db->close();
+} catch (Throwable $e) {
+    error_log('[salvar-cliente.php] Falha ao validar celular duplicado: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['erro' => 'Não foi possível validar o celular informado.']);
+    exit();
+}
+
+if ($clienteExistente !== null) {
+    http_response_code(409);
+    echo json_encode(['erro' => 'Já tem cliente cadastrado com esse número de celular.']);
     exit();
 }
 
@@ -111,8 +129,6 @@ if ($cep !== '') {
 if (!empty($endereco)) {
     $payload['endereco'] = ['geral' => $endereco];
 }
-
-$contatoId = isset($dadosEntrada['id']) && $dadosEntrada['id'] !== '' ? trim((string)$dadosEntrada['id']) : null;
 
 $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 if ($payloadJson === false) {

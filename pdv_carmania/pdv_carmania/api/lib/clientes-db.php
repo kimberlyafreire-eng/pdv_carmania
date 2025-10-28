@@ -223,6 +223,49 @@ function buscarClientesLocalmente(SQLite3 $db): array
 }
 
 /**
+ * Busca um cliente existente a partir do número de celular informado.
+ */
+function encontrarClientePorCelular(SQLite3 $db, string $celular, ?string $ignorarId = null): ?array
+{
+    $celularNormalizado = normalizarTelefoneComparacao($celular);
+    if ($celularNormalizado === '') {
+        return null;
+    }
+
+    $clienteEncontrado = null;
+    $resultado = $db->query('SELECT * FROM clientes WHERE celular IS NOT NULL AND celular <> ""');
+    if ($resultado === false) {
+        return null;
+    }
+
+    while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+        if (!is_array($linha)) {
+            continue;
+        }
+
+        $celularLinha = normalizarTelefoneComparacao($linha['celular'] ?? null);
+        if ($celularLinha === '') {
+            continue;
+        }
+
+        if ($celularLinha !== $celularNormalizado) {
+            continue;
+        }
+
+        if ($ignorarId !== null && isset($linha['id']) && (string) $linha['id'] === $ignorarId) {
+            continue;
+        }
+
+        $clienteEncontrado = $linha;
+        break;
+    }
+
+    $resultado->finalize();
+
+    return $clienteEncontrado;
+}
+
+/**
  * Normaliza e prepara os dados do cliente antes de gravar no banco local.
  */
 function normalizarDadosCliente(array $cliente): array
@@ -491,4 +534,18 @@ function bindValorOuNulo(SQLite3Stmt $stmt, string $parametro, $valor): void
     } else {
         $stmt->bindValue($parametro, (string) $valor, SQLITE3_TEXT);
     }
+}
+
+/**
+ * Normaliza números de telefone/celular para comparação interna.
+ */
+function normalizarTelefoneComparacao($numero): string
+{
+    if (!is_scalar($numero)) {
+        return '';
+    }
+
+    $digitos = preg_replace('/\D+/', '', (string) $numero);
+
+    return $digitos ?? '';
 }
