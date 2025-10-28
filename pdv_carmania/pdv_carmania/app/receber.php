@@ -74,7 +74,7 @@ if (!isset($_SESSION['usuario'])) {
       <!-- Seleção de cliente -->
       <div class="card p-3 p-md-4 mb-4 shadow-sm border-0">
         <label class="form-label fw-bold">Cliente</label>
-        <input type="text" id="clienteBusca" class="form-control" placeholder="Digite o nome do cliente">
+        <input type="text" id="clienteBusca" class="form-control" placeholder="Digite o nome ou celular do cliente">
         <div id="listaClientes" class="list-group mt-2 autocomplete-list"></div>
         <button class="btn btn-danger mt-3 w-100" id="btnBuscarSaldo" disabled>🔎 Consultar Saldo</button>
       </div>
@@ -117,6 +117,20 @@ if (!isset($_SESSION['usuario'])) {
       4: 'Cancelado',
       5: 'Em atraso'
     };
+
+    function removerAcentos(texto) {
+      return String(texto || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function normalizarTexto(texto) {
+      return removerAcentos(texto).toLowerCase();
+    }
+
+    function extrairDigitos(texto) {
+      return String(texto || '').replace(/\D+/g, '');
+    }
 
     function formatCurrency(value) {
       const numero = typeof value === 'number' ? value : parseFloat(value);
@@ -277,18 +291,43 @@ if (!isset($_SESSION['usuario'])) {
     const listaEl = document.getElementById("listaClientes");
 
     inputBusca.addEventListener("input", function() {
-      const busca = this.value.toLowerCase();
+      const termoBruto = this.value.trim();
+      const buscaTexto = normalizarTexto(termoBruto);
+      const buscaNumerica = extrairDigitos(termoBruto);
+      const contemLetras = /[a-z]/i.test(removerAcentos(termoBruto));
+      const temBuscaTexto = contemLetras && buscaTexto.length > 0;
+      const temBuscaNumerica = buscaNumerica.length >= 3;
       delete this.dataset.id;
       clienteSelecionado = null;
       document.getElementById("btnBuscarSaldo").disabled = true;
       listaEl.innerHTML = "";
-      if (!busca) return;
+      if (!temBuscaTexto && !temBuscaNumerica) return;
 
-      const encontrados = clientesLista.filter(c => c.nome.toLowerCase().includes(busca)).slice(0, 5);
+      const encontrados = clientesLista.filter((cli) => {
+        const nomeNormalizado = normalizarTexto(cli.nome);
+        const documentoTexto = normalizarTexto(cli.numeroDocumento || '');
+        const documentoNumerico = extrairDigitos(cli.numeroDocumento || '');
+        const celularNumerico = extrairDigitos(cli.celular || '');
+        const telefoneNumerico = extrairDigitos(cli.telefone || '');
+
+        const correspondeTexto = temBuscaTexto
+          ? nomeNormalizado.includes(buscaTexto) || documentoTexto.includes(buscaTexto)
+          : false;
+        const correspondeNumerico = temBuscaNumerica
+          ? documentoNumerico.includes(buscaNumerica)
+            || celularNumerico.includes(buscaNumerica)
+            || telefoneNumerico.includes(buscaNumerica)
+          : false;
+
+        return correspondeTexto || correspondeNumerico;
+      }).slice(0, 5);
       encontrados.forEach(cli => {
         const btn = document.createElement("button");
         btn.className = "list-group-item list-group-item-action";
-        btn.textContent = cli.nome;
+        const infoContato = cli.celular || cli.telefone || cli.numeroDocumento || '';
+        btn.innerHTML = infoContato
+          ? `<div class="fw-semibold">${cli.nome}</div><small class="text-muted">${infoContato}</small>`
+          : cli.nome;
         btn.onclick = () => {
           inputBusca.value = cli.nome;
           inputBusca.dataset.id = cli.id;
