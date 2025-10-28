@@ -27,5 +27,6 @@ Para mitigar o impacto enquanto a situação não é normalizada, recomenda-se:
 - Quando houver necessidade de chamadas manuais (scripts próprios), implementar backoff exponencial e respeitar os cabeçalhos `X-RateLimit-Remaining`/`X-RateLimit-Reset`. O servidor do GitHub sinaliza claramente quando o limite foi atingido com HTTP 403 e esses cabeçalhos.
 - Caso o bloqueio seja devido ao roteamento nacional, considerar temporariamente o uso de VPN ou proxies corporativos até que o provedor normalize o acesso.
 - Para consultas internas no PDV, a tela **Vendas** agora cancela requisições em duplicidade, utiliza backoff exponencial quando o servidor responde com `429/503` e desabilita o botão de filtro enquanto aguarda a resposta, reduzindo a chance de excesso de chamadas sequenciais.
+- Os assets front-end antes servidos via CDN (Bootstrap e html2canvas) agora passam por um cache local (`assets/cdn-cache.php`) com retentativa, respeitando `Retry-After` e reutilizando versões armazenadas para evitar estouro de limite em provedores que roteiam a requisição pelo GitHub.
 
 Essas medidas foram consolidadas a partir dos relatos recentes da comunidade brasileira de desenvolvimento e ajudam a reduzir a instabilidade até a regularização do acesso ao GitHub.

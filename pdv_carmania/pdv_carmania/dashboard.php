@@ -6,7 +6,7 @@ require 'auth-check.php';
 <head>
     <meta charset="UTF-8">
     <title>PDV Carmania</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/cdn-cache.php?asset=bootstrap-css" rel="stylesheet">
 </head>
 <body>
     <div class="container mt-4">
@@ -16,5 +16,6 @@ require 'auth-check.php';
         </div>
         <p>Aqui vai a interface do PDV (produtos, carrinho, etc.)</p>
     </div>
+    <script src="assets/cdn-cache.php?asset=bootstrap-js"></script>
 </body>
 </html>

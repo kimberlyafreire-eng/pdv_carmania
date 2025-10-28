@@ -30,7 +30,7 @@ if (file_exists($dbFile)) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Controle de Caixa - PDV Carmania</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="../assets/cdn-cache.php?asset=bootstrap-css" rel="stylesheet" />
   <style>
     :root {
       color-scheme: light;
@@ -316,7 +316,7 @@ if (file_exists($dbFile)) {
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
   <script>
     window.USUARIO_LOGADO = <?php echo json_encode($usuarioLogado); ?>;
     window.ESTOQUE_PADRAO_ID = <?php echo json_encode($estoquePadraoId); ?>;

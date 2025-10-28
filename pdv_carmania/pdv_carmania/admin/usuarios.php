@@ -61,7 +61,7 @@ $result = $db->query("SELECT id, usuario, nome, nivel, estoque_padrao FROM usuar
 <head>
   <meta charset="UTF-8">
   <title>Gerenciar Usuários - PDV Carmania</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../assets/cdn-cache.php?asset=bootstrap-css">
   <style>
     body { background:#f8f9fa; }
     .container { max-width:700px; margin-top:40px; }
@@ -127,5 +127,6 @@ $result = $db->query("SELECT id, usuario, nome, nivel, estoque_padrao FROM usuar
       </table>
     </div>
   </div>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
 </body>
 </html>

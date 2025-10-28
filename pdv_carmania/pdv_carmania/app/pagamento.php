@@ -36,7 +36,7 @@ if ($usuarioLogado) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Formas de Pagamento - PDV Carmania</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="../assets/cdn-cache.php?asset=bootstrap-css" rel="stylesheet">
   <style>
     :root {
       color-scheme: light;
@@ -424,8 +424,8 @@ if ($usuarioLogado) {
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
+  <script src="../assets/cdn-cache.php?asset=html2canvas-js"></script>
   <script>
     window.USUARIO_LOGADO = <?= json_encode($usuarioLogado) ?>;
     window.VENDEDOR_ID = <?= json_encode($vendedorId) ?>;

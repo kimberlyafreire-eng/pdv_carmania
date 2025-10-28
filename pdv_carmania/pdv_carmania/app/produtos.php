@@ -30,7 +30,7 @@ if ($usuarioLogado && file_exists($dbFile)) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Produtos - PDV Carmania</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="../assets/cdn-cache.php?asset=bootstrap-css" rel="stylesheet" />
   <style>
     body {
       background-color: #f8f9fa;
@@ -210,7 +210,7 @@ if ($usuarioLogado && file_exists($dbFile)) {
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
   <script>
     window.ESTOQUE_PADRAO_ID = <?php echo json_encode($estoquePadraoId); ?>;
   </script>

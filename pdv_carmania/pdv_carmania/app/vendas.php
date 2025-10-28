@@ -11,7 +11,7 @@ if (!isset($_SESSION['usuario'])) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Vendas - PDV Carmania</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="../assets/cdn-cache.php?asset=bootstrap-css" rel="stylesheet" />
   <style>
     body {
       background-color: #f8f9fa;
@@ -307,8 +307,8 @@ if (!isset($_SESSION['usuario'])) {
 
   <div id="reciboContainer"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
+  <script src="../assets/cdn-cache.php?asset=html2canvas-js"></script>
   <script>
     const tabelaCorpo = document.getElementById('tabelaVendasCorpo');
     const semResultados = document.getElementById('semResultados');

@@ -12,7 +12,7 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Pagamento Crediário - PDV Carmania</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="../assets/cdn-cache.php?asset=bootstrap-css" rel="stylesheet">
   <style>
     :root {
       color-scheme: light;
@@ -390,8 +390,8 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
+  <script src="../assets/cdn-cache.php?asset=html2canvas-js"></script>
   <script>
     window.USUARIO_LOGADO = <?= json_encode($usuarioLogado) ?>;
   </script>

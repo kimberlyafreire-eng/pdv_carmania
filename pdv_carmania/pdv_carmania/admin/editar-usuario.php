@@ -81,7 +81,7 @@ $usuarios = $db->query("SELECT * FROM usuarios ORDER BY id DESC");
 <head>
   <meta charset="UTF-8">
   <title>Editar Usuários - PDV Carmania</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../assets/cdn-cache.php?asset=bootstrap-css">
   <style>
     body { background:#f8f9fa; }
     .container { max-width:700px; margin-top:40px; }
@@ -155,5 +155,6 @@ $usuarios = $db->query("SELECT * FROM usuarios ORDER BY id DESC");
     </table>
   </div>
 </div>
+  <script src="../assets/cdn-cache.php?asset=bootstrap-js"></script>
 </body>
 </html>
