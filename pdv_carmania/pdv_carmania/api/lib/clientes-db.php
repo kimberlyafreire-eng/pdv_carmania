@@ -84,7 +84,7 @@ function garantirEstruturaClientes(SQLite3 $db): void
  */
 function atualizarCelularesNormalizadosPendentes(SQLite3 $db): void
 {
-    $resultado = $db->query('SELECT id, celular, celular_normalizado FROM clientes WHERE celular IS NOT NULL AND celular <> "" AND (celular_normalizado IS NULL OR celular_normalizado = "")');
+    $resultado = $db->query('SELECT id, celular, celular_normalizado FROM clientes WHERE celular IS NOT NULL AND celular <> ""');
     if ($resultado === false) {
         return;
     }
@@ -97,6 +97,15 @@ function atualizarCelularesNormalizadosPendentes(SQLite3 $db): void
         $celularNormalizado = normalizarTelefoneComparacao($linha['celular'] ?? null);
         if ($celularNormalizado === '') {
             $celularNormalizado = null;
+        }
+
+        $atual = $linha['celular_normalizado'] ?? null;
+        if ($atual === '') {
+            $atual = null;
+        }
+
+        if ($celularNormalizado === $atual) {
+            continue;
         }
 
         $stmt = $db->prepare('UPDATE clientes SET celular_normalizado = :celular_normalizado WHERE id = :id');
@@ -635,6 +644,28 @@ function normalizarTelefoneComparacao($numero): string
     }
 
     $digitos = preg_replace('/\D+/', '', (string) $numero);
+    if ($digitos === null || $digitos === '') {
+        return '';
+    }
 
-    return $digitos ?? '';
+    $digitos = ltrim($digitos, '0');
+    if ($digitos === '') {
+        return '';
+    }
+
+    $tamanho = strlen($digitos);
+    if ($tamanho > 11 && strncmp($digitos, '55', 2) === 0) {
+        $restante = substr($digitos, 2);
+        $tamanhoRestante = strlen($restante);
+        if ($tamanhoRestante >= 10 && $tamanhoRestante <= 11) {
+            $digitos = $restante;
+            $tamanho = $tamanhoRestante;
+        }
+    }
+
+    if ($tamanho > 11) {
+        $digitos = substr($digitos, -11);
+    }
+
+    return $digitos;
 }
