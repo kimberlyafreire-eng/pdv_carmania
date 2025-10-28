@@ -57,6 +57,42 @@ if ($usuarioLogado) {
       background-color: #dc3545;
     }
 
+    .cliente-destaque {
+      background: #fff5f5;
+      border-bottom: 1px solid rgba(220, 53, 69, 0.15);
+      box-shadow: 0 6px 18px rgba(220, 53, 69, 0.08);
+    }
+
+    .cliente-destaque .cliente-wrapper {
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    @media (min-width: 576px) {
+      .cliente-destaque .cliente-wrapper {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+      }
+    }
+
+    .cliente-destaque .cliente-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6c757d;
+      font-weight: 600;
+    }
+
+    .cliente-destaque .cliente-nome {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      font-weight: 700;
+      color: #b02a37;
+      word-break: break-word;
+    }
+
     #telaPagamento {
       flex: 1;
       display: flex;
@@ -179,9 +215,9 @@ if ($usuarioLogado) {
       background: #ffffff;
       border: 2px solid #dc3545;
       border-radius: 14px;
-      padding: 0;
       width: 100%;
-      aspect-ratio: 1;
+      min-height: 108px;
+      padding: 1rem 0.75rem;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -191,8 +227,9 @@ if ($usuarioLogado) {
       transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       cursor: pointer;
       user-select: none;
-      font-size: 1.05rem;
-      padding-inline: 0.35rem;
+      font-size: 1.15rem;
+      line-height: 1.35;
+      padding-inline: 0.75rem;
     }
 
     .forma-card:hover,
@@ -286,7 +323,7 @@ if ($usuarioLogado) {
       }
 
       .forma-card {
-        min-height: 140px;
+        min-height: 120px;
       }
 
       .recibo-area {
@@ -321,6 +358,13 @@ if ($usuarioLogado) {
     <span class="navbar-text text-white fw-bold">Pagamento</span>
     <div></div>
   </nav>
+
+  <div class="cliente-destaque">
+    <div class="container cliente-wrapper">
+      <span class="cliente-label">Cliente selecionado</span>
+      <span class="cliente-nome" id="clienteSelecionadoNome">Nenhum cliente selecionado</span>
+    </div>
+  </div>
 
   <main class="container-fluid" id="telaPagamento">
     <div class="container pagamento-conteudo">
@@ -408,6 +452,7 @@ if ($usuarioLogado) {
 
     const vendedorId = window.VENDEDOR_ID || null;
     const dadosVenda = JSON.parse(localStorage.getItem("dadosVenda") || "null");
+    const clienteNomeEl = document.getElementById("clienteSelecionadoNome");
     let carrinho = [], clienteSelecionado = null, descontoValor = 0, descontoPercentual = 0, totalVenda = 0;
 
     if (dadosVenda) {
@@ -417,6 +462,28 @@ if ($usuarioLogado) {
       descontoPercentual = toNum(dadosVenda.descontoPercentual);
       totalVenda = toNum(dadosVenda.total);
     }
+
+    if (!clienteSelecionado) {
+      try {
+        clienteSelecionado = JSON.parse(localStorage.getItem("clienteSelecionado") || "null");
+      } catch (err) {
+        console.warn("Falha ao ler cliente selecionado do armazenamento local.", err);
+      }
+    }
+
+    function atualizarClienteDestaque(cliente) {
+      if (!clienteNomeEl) return;
+      const nome = typeof cliente?.nome === "string" ? cliente.nome.trim() : "";
+      if (nome) {
+        clienteNomeEl.textContent = nome;
+        clienteNomeEl.classList.remove("text-muted");
+      } else {
+        clienteNomeEl.textContent = "Nenhum cliente selecionado";
+        clienteNomeEl.classList.add("text-muted");
+      }
+    }
+
+    atualizarClienteDestaque(clienteSelecionado);
 
     if (!totalVenda || totalVenda <= 0) {
       let bruto = carrinho.reduce((s, it) => s + (toNum(it.preco) * toNum(it.quantidade)), 0);
