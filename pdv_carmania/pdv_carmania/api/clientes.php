@@ -54,6 +54,7 @@ function consultarPaginaContatos(int $pagina, int $limite, string $accessToken):
     $query = http_build_query([
         'pagina' => $pagina,
         'limite' => $limite,
+        'with' => 'enderecos',
     ], '', '&', PHP_QUERY_RFC3986);
 
     $url = "https://www.bling.com.br/Api/v3/contatos?$query";

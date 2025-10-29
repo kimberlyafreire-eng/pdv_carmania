@@ -38,12 +38,37 @@ function getClientesDb(): SQLite3
         telefone TEXT,
         codigo TEXT,
         rua TEXT,
+        numero TEXT,
+        complemento TEXT,
         bairro TEXT,
         cidade TEXT,
         estado TEXT,
         cep TEXT,
         atualizado_em TEXT NOT NULL
     )');
+
+    try {
+        $colunas = [];
+        $resultado = $db->query('PRAGMA table_info(clientes)');
+        if ($resultado instanceof SQLite3Result) {
+            while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+                if (isset($linha['name'])) {
+                    $colunas[] = strtolower((string) $linha['name']);
+                }
+            }
+            $resultado->finalize();
+        }
+
+        $colunasExistentes = array_flip($colunas);
+        if (!isset($colunasExistentes['numero'])) {
+            $db->exec("ALTER TABLE clientes ADD COLUMN numero TEXT");
+        }
+        if (!isset($colunasExistentes['complemento'])) {
+            $db->exec("ALTER TABLE clientes ADD COLUMN complemento TEXT");
+        }
+    } catch (Throwable $e) {
+        error_log('[clientes-db] Falha ao atualizar estrutura da tabela clientes: ' . $e->getMessage());
+    }
 
     $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome COLLATE NOCASE)');
 
@@ -59,9 +84,9 @@ function upsertCliente(SQLite3 $db, array $cliente): void
 
     if (!$stmt instanceof SQLite3Stmt) {
         $stmt = $db->prepare('INSERT INTO clientes (
-                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
+                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, numero, complemento, bairro, cidade, estado, cep, atualizado_em
             ) VALUES (
-                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :bairro, :cidade, :estado, :cep, :atualizado_em
+                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :numero, :complemento, :bairro, :cidade, :estado, :cep, :atualizado_em
             )
             ON CONFLICT(id) DO UPDATE SET
                 nome = excluded.nome,
@@ -71,6 +96,8 @@ function upsertCliente(SQLite3 $db, array $cliente): void
                 telefone = excluded.telefone,
                 codigo = excluded.codigo,
                 rua = excluded.rua,
+                numero = excluded.numero,
+                complemento = excluded.complemento,
                 bairro = excluded.bairro,
                 cidade = excluded.cidade,
                 estado = excluded.estado,
@@ -93,6 +120,8 @@ function upsertCliente(SQLite3 $db, array $cliente): void
     bindValorOuNulo($stmt, ':telefone', $dados['telefone']);
     bindValorOuNulo($stmt, ':codigo', $dados['codigo']);
     bindValorOuNulo($stmt, ':rua', $dados['rua']);
+    bindValorOuNulo($stmt, ':numero', $dados['numero']);
+    bindValorOuNulo($stmt, ':complemento', $dados['complemento']);
     bindValorOuNulo($stmt, ':bairro', $dados['bairro']);
     bindValorOuNulo($stmt, ':cidade', $dados['cidade']);
     bindValorOuNulo($stmt, ':estado', $dados['estado']);
@@ -223,6 +252,243 @@ function buscarClientesLocalmente(SQLite3 $db): array
 }
 
 /**
+ * Extrai e normaliza o endereço principal de um cliente, independente do formato
+ * utilizado na origem (API, cache JSON ou banco local).
+ */
+function extrairEnderecoPrincipal(array $cliente): array
+{
+    $candidatos = [];
+
+    $fonteEndereco = $cliente['endereco'] ?? null;
+    if (is_array($fonteEndereco)) {
+        if (isset($fonteEndereco['geral']) && is_array($fonteEndereco['geral'])) {
+            $candidato = $fonteEndereco['geral'];
+            $candidato['__tipoPreferido'] = 'GERAL';
+            $candidato['__padrao'] = true;
+            $candidatos[] = $candidato;
+        }
+
+        $rotulosSecundarios = ['principal', 'cobranca', 'cobrança', 'entrega'];
+        foreach ($rotulosSecundarios as $rotulo) {
+            if (isset($fonteEndereco[$rotulo]) && is_array($fonteEndereco[$rotulo])) {
+                $candidato = $fonteEndereco[$rotulo];
+                $candidato['__tipoPreferido'] = strtoupper($rotulo);
+                $candidato['__padrao'] = false;
+                $candidatos[] = $candidato;
+            }
+        }
+
+        if (array_values($fonteEndereco) !== $fonteEndereco) {
+            $candidato = $fonteEndereco;
+            $candidato['__tipoPreferido'] = 'GERAL';
+            $candidato['__padrao'] = true;
+            $candidatos[] = $candidato;
+        }
+    } elseif ($fonteEndereco !== null && $fonteEndereco !== '') {
+        $candidatos[] = [
+            'endereco' => $fonteEndereco,
+            'numero' => $cliente['numero'] ?? ($cliente['numeroEndereco'] ?? null),
+            'complemento' => $cliente['complemento'] ?? null,
+            'bairro' => $cliente['bairro'] ?? null,
+            'municipio' => $cliente['municipio'] ?? ($cliente['cidade'] ?? null),
+            'uf' => $cliente['uf'] ?? ($cliente['estado'] ?? null),
+            'cep' => $cliente['cep'] ?? null,
+            '__tipoPreferido' => 'GERAL',
+            '__padrao' => true,
+        ];
+    }
+
+    if (isset($cliente['enderecos']) && is_array($cliente['enderecos'])) {
+        foreach ($cliente['enderecos'] as $enderecoLista) {
+            if (!is_array($enderecoLista)) {
+                continue;
+            }
+
+            $tipo = $enderecoLista['tipo'] ?? ($enderecoLista['tipoEndereco'] ?? ($enderecoLista['descricao'] ?? ''));
+            $padrao = false;
+            if (isset($enderecoLista['padrao'])) {
+                $valorPadrao = $enderecoLista['padrao'];
+                if (is_bool($valorPadrao)) {
+                    $padrao = $valorPadrao;
+                } elseif (is_numeric($valorPadrao)) {
+                    $padrao = (int) $valorPadrao !== 0;
+                } elseif (is_string($valorPadrao)) {
+                    $padrao = in_array(strtolower(trim($valorPadrao)), ['1', 'true', 't', 'sim', 's', 'y', 'yes'], true);
+                }
+            }
+
+            $enderecoLista['__tipoPreferido'] = strtoupper(trim((string) $tipo));
+            $enderecoLista['__padrao'] = $padrao;
+            $candidatos[] = $enderecoLista;
+        }
+    }
+
+    $topLevel = [
+        'endereco' => null,
+        'numero' => $cliente['numero'] ?? ($cliente['numeroEndereco'] ?? null),
+        'complemento' => $cliente['complemento'] ?? null,
+        'bairro' => $cliente['bairro'] ?? null,
+        'municipio' => $cliente['municipio'] ?? ($cliente['cidade'] ?? null),
+        'uf' => $cliente['uf'] ?? ($cliente['estado'] ?? null),
+        'cep' => $cliente['cep'] ?? null,
+    ];
+
+    foreach (['logradouro', 'rua'] as $chave) {
+        if (isset($cliente[$chave]) && is_string($cliente[$chave])) {
+            $valor = trim($cliente[$chave]);
+            if ($valor !== '') {
+                $topLevel['endereco'] = $valor;
+                break;
+            }
+        }
+    }
+
+    if ($topLevel['endereco'] === null && isset($cliente['endereco']) && !is_array($cliente['endereco'])) {
+        $valor = trim((string) $cliente['endereco']);
+        if ($valor !== '') {
+            $topLevel['endereco'] = $valor;
+        }
+    }
+
+    $possuiAlgumValor = false;
+    foreach ($topLevel as $campo => $valor) {
+        if ($valor !== null && $valor !== '') {
+            $possuiAlgumValor = true;
+            break;
+        }
+    }
+
+    if ($possuiAlgumValor) {
+        $topLevel['__tipoPreferido'] = 'GERAL';
+        $topLevel['__padrao'] = true;
+        $candidatos[] = $topLevel;
+    }
+
+    $melhorEndereco = [];
+    $melhorPontuacao = -1;
+
+    foreach ($candidatos as $candidato) {
+        $tipoPreferido = strtoupper(trim((string) ($candidato['__tipoPreferido'] ?? '')));
+        $padrao = !empty($candidato['__padrao']);
+        unset($candidato['__tipoPreferido'], $candidato['__padrao']);
+
+        $normalizado = normalizarEnderecoCandidato($candidato);
+        if (empty($normalizado)) {
+            continue;
+        }
+
+        $pontuacao = pontuarEnderecoCandidato($normalizado, $tipoPreferido, $padrao);
+        if ($pontuacao > $melhorPontuacao) {
+            $melhorPontuacao = $pontuacao;
+            $melhorEndereco = $normalizado;
+        }
+    }
+
+    return $melhorEndereco;
+}
+
+/**
+ * Normaliza um endereço de diversas estruturas para chaves consistentes.
+ */
+function normalizarEnderecoCandidato(array $fonte): array
+{
+    $resultado = [];
+
+    $mapa = [
+        'endereco' => ['endereco', 'logradouro', 'rua'],
+        'numero' => ['numero', 'numeroEndereco'],
+        'complemento' => ['complemento'],
+        'bairro' => ['bairro'],
+        'municipio' => ['municipio', 'cidade'],
+        'uf' => ['uf', 'estado'],
+        'cep' => ['cep'],
+    ];
+
+    foreach ($mapa as $destino => $chaves) {
+        foreach ($chaves as $chave) {
+            if (!array_key_exists($chave, $fonte)) {
+                continue;
+            }
+
+            $valor = $fonte[$chave];
+            if ($valor === null) {
+                continue;
+            }
+
+            $valor = trim((string) $valor);
+            if ($valor === '') {
+                continue;
+            }
+
+            if ($destino === 'uf') {
+                $valor = strtoupper($valor);
+            }
+
+            if ($destino === 'cep') {
+                $valor = preg_replace('/\D+/', '', $valor);
+            }
+
+            $resultado[$destino] = $valor;
+            break;
+        }
+    }
+
+    return $resultado;
+}
+
+/**
+ * Atribui uma pontuação ao endereço candidato para escolher o mais completo e relevante.
+ */
+function pontuarEnderecoCandidato(array $endereco, string $tipoPreferido, bool $padrao): int
+{
+    $pontuacao = 0;
+
+    $tipo = strtoupper(trim($tipoPreferido));
+    switch ($tipo) {
+        case 'GERAL':
+        case 'PRINCIPAL':
+            $pontuacao += 50;
+            break;
+        case 'COBRANCA':
+        case 'COBRANÇA':
+            $pontuacao += 40;
+            break;
+        case 'ENTREGA':
+            $pontuacao += 30;
+            break;
+        default:
+            if ($tipo !== '') {
+                $pontuacao += 10;
+            }
+    }
+
+    if ($padrao) {
+        $pontuacao += 5;
+    }
+
+    foreach (['endereco', 'municipio', 'uf'] as $campo) {
+        if (!empty($endereco[$campo])) {
+            $pontuacao += 5;
+        }
+    }
+
+    if (!empty($endereco['cep'])) {
+        $pontuacao += 4;
+    }
+    if (!empty($endereco['numero'])) {
+        $pontuacao += 2;
+    }
+    if (!empty($endereco['bairro'])) {
+        $pontuacao += 2;
+    }
+    if (!empty($endereco['complemento'])) {
+        $pontuacao += 1;
+    }
+
+    return $pontuacao;
+}
+
+/**
  * Normaliza e prepara os dados do cliente antes de gravar no banco local.
  */
 function normalizarDadosCliente(array $cliente): array
@@ -248,15 +514,18 @@ function normalizarDadosCliente(array $cliente): array
     $celular = isset($cliente['celular']) ? trim((string) $cliente['celular']) : null;
     $telefone = isset($cliente['telefone']) ? trim((string) $cliente['telefone']) : null;
 
-    $endereco = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? []);
-    $rua = isset($endereco['endereco']) ? trim((string) $endereco['endereco']) : null;
-    $bairro = isset($endereco['bairro']) ? trim((string) $endereco['bairro']) : null;
-    $cidade = isset($endereco['municipio']) ? trim((string) $endereco['municipio']) : null;
-    $estado = isset($endereco['uf']) ? strtoupper(trim((string) $endereco['uf'])) : null;
+    $enderecoPrincipal = extrairEnderecoPrincipal($cliente);
+
+    $rua = isset($enderecoPrincipal['endereco']) ? trim((string) $enderecoPrincipal['endereco']) : null;
+    $numero = isset($enderecoPrincipal['numero']) ? trim((string) $enderecoPrincipal['numero']) : null;
+    $complemento = isset($enderecoPrincipal['complemento']) ? trim((string) $enderecoPrincipal['complemento']) : null;
+    $bairro = isset($enderecoPrincipal['bairro']) ? trim((string) $enderecoPrincipal['bairro']) : null;
+    $cidade = isset($enderecoPrincipal['municipio']) ? trim((string) $enderecoPrincipal['municipio']) : null;
+    $estado = isset($enderecoPrincipal['uf']) ? strtoupper(trim((string) $enderecoPrincipal['uf'])) : null;
 
     $cep = null;
-    if (!empty($endereco['cep'])) {
-        $cep = preg_replace('/\D+/', '', (string) $endereco['cep']);
+    if (!empty($enderecoPrincipal['cep'])) {
+        $cep = preg_replace('/\D+/', '', (string) $enderecoPrincipal['cep']);
     }
 
     return [
@@ -268,6 +537,8 @@ function normalizarDadosCliente(array $cliente): array
         'telefone' => $telefone,
         'codigo' => $codigo,
         'rua' => $rua,
+        'numero' => $numero,
+        'complemento' => $complemento,
         'bairro' => $bairro,
         'cidade' => $cidade,
         'estado' => $estado,
@@ -339,33 +610,36 @@ function normalizarClienteParaResposta(array $cliente): ?array
         $telefone = null;
     }
 
-    $enderecoFonte = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? null);
+    $enderecoPrincipal = extrairEnderecoPrincipal($cliente);
     $enderecoNormalizado = [];
 
-    if (is_array($enderecoFonte)) {
-        $rua = isset($enderecoFonte['endereco']) ? trim((string) $enderecoFonte['endereco']) : '';
-        if ($rua !== '') {
-            $enderecoNormalizado['endereco'] = $rua;
+    if (!empty($enderecoPrincipal)) {
+        if (!empty($enderecoPrincipal['endereco'])) {
+            $enderecoNormalizado['endereco'] = trim((string) $enderecoPrincipal['endereco']);
         }
 
-        $bairro = isset($enderecoFonte['bairro']) ? trim((string) $enderecoFonte['bairro']) : '';
-        if ($bairro !== '') {
-            $enderecoNormalizado['bairro'] = $bairro;
+        if (!empty($enderecoPrincipal['numero'])) {
+            $enderecoNormalizado['numero'] = trim((string) $enderecoPrincipal['numero']);
         }
 
-        $municipio = isset($enderecoFonte['municipio']) ? trim((string) $enderecoFonte['municipio']) : '';
-        if ($municipio !== '') {
-            $enderecoNormalizado['municipio'] = $municipio;
+        if (!empty($enderecoPrincipal['complemento'])) {
+            $enderecoNormalizado['complemento'] = trim((string) $enderecoPrincipal['complemento']);
         }
 
-        $uf = isset($enderecoFonte['uf']) ? strtoupper(trim((string) $enderecoFonte['uf'])) : '';
-        if ($uf !== '') {
-            $enderecoNormalizado['uf'] = $uf;
+        if (!empty($enderecoPrincipal['bairro'])) {
+            $enderecoNormalizado['bairro'] = trim((string) $enderecoPrincipal['bairro']);
         }
 
-        $cepBruto = isset($enderecoFonte['cep']) ? (string) $enderecoFonte['cep'] : '';
-        if ($cepBruto !== '') {
-            $cepDigitos = preg_replace('/\D+/', '', $cepBruto);
+        if (!empty($enderecoPrincipal['municipio'])) {
+            $enderecoNormalizado['municipio'] = trim((string) $enderecoPrincipal['municipio']);
+        }
+
+        if (!empty($enderecoPrincipal['uf'])) {
+            $enderecoNormalizado['uf'] = strtoupper(trim((string) $enderecoPrincipal['uf']));
+        }
+
+        if (!empty($enderecoPrincipal['cep'])) {
+            $cepDigitos = preg_replace('/\D+/', '', (string) $enderecoPrincipal['cep']);
             if ($cepDigitos !== '') {
                 $enderecoNormalizado['cep'] = formatarCepSaida($cepDigitos);
             }
@@ -421,6 +695,8 @@ function montarEstruturaCliente(array $linha): array
 
     $endereco = array_filter([
         'endereco' => $linha['rua'] ?? null,
+        'numero' => $linha['numero'] ?? null,
+        'complemento' => $linha['complemento'] ?? null,
         'bairro' => $linha['bairro'] ?? null,
         'municipio' => $linha['cidade'] ?? null,
         'uf' => $linha['estado'] ?? null,
