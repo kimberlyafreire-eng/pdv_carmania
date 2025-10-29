@@ -88,6 +88,10 @@ $rua = trim($dadosEntrada['endereco'] ?? '');
 if ($rua !== '') {
     $endereco['endereco'] = $rua;
 }
+$numeroEndereco = trim($dadosEntrada['numero'] ?? '');
+if ($numeroEndereco !== '') {
+    $endereco['numero'] = $numeroEndereco;
+}
 $bairro = trim($dadosEntrada['bairro'] ?? '');
 if ($bairro !== '') {
     $endereco['bairro'] = $bairro;
@@ -178,10 +182,13 @@ if ($httpCode < 200 || $httpCode >= 300) {
 
 $clienteAtualizado = $dadosResposta['data'] ?? null;
 $clienteNormalizado = null;
+$dadosParaPersistencia = null;
 
 // Atualiza o cache local de clientes quando possível.
 if (is_array($clienteAtualizado)) {
+    $clienteAtualizado = complementarClienteComPayload($clienteAtualizado, $payload);
     $clienteNormalizado = normalizarClienteParaResposta($clienteAtualizado);
+    $dadosParaPersistencia = $clienteAtualizado;
     $cacheClientes = __DIR__ . '/../cache/clientes-cache.json';
     $clientes = ['data' => []];
 
@@ -221,10 +228,11 @@ if (is_array($clienteAtualizado)) {
     }
 
     $atualizado = false;
-    if ($clienteNormalizado !== null) {
+    $clienteParaCache = $clienteNormalizado ?? $clienteAtualizado;
+    if ($clienteParaCache !== null) {
         foreach ($clientes['data'] as &$cliente) {
-            if (isset($cliente['id']) && (string) $cliente['id'] === (string) $clienteNormalizado['id']) {
-                $cliente = $clienteNormalizado;
+            if (isset($cliente['id']) && (string) $cliente['id'] === (string) $clienteParaCache['id']) {
+                $cliente = $clienteParaCache;
                 $atualizado = true;
                 break;
             }
@@ -232,7 +240,7 @@ if (is_array($clienteAtualizado)) {
         unset($cliente);
 
         if (!$atualizado) {
-            $clientes['data'][] = $clienteNormalizado;
+            $clientes['data'][] = $clienteParaCache;
         }
     } elseif (isset($clienteAtualizado['id'])) {
         foreach ($clientes['data'] as &$cliente) {
@@ -270,14 +278,6 @@ if (is_array($clienteAtualizado)) {
         }
     }
 
-    try {
-        $db = getClientesDb();
-        upsertCliente($db, $clienteAtualizado);
-        $db->close();
-    } catch (Throwable $e) {
-        error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
-    }
-
     // Agenda a atualização completa do cache de clientes para rodar em background.
     try {
         $refreshUrl = buildClientesRefreshUrl();
@@ -286,6 +286,37 @@ if (is_array($clienteAtualizado)) {
         }
     } catch (Throwable $e) {
         error_log('[salvar-cliente.php] Erro ao preparar atualização do cache de clientes: ' . $e->getMessage());
+    }
+}
+
+$clienteNormalizado = $clienteNormalizado ?? normalizarClienteParaResposta($clienteAtualizado ?? []);
+if ($clienteNormalizado === null) {
+    $clienteNormalizado = normalizarClienteParaResposta(construirClienteParaNormalizacao($payload, $clienteAtualizado, $contatoId));
+}
+
+if ($dadosParaPersistencia === null) {
+    $dadosParaPersistencia = $clienteNormalizado;
+}
+
+if ($dadosParaPersistencia === null) {
+    $estruturaFallback = construirClienteParaNormalizacao($payload, $clienteAtualizado, $contatoId);
+    if (!empty($estruturaFallback)) {
+        $dadosParaPersistencia = $estruturaFallback;
+    }
+}
+
+if (
+    $dadosParaPersistencia !== null
+    && !empty($dadosParaPersistencia)
+    && isset($dadosParaPersistencia['id'])
+    && $dadosParaPersistencia['id'] !== ''
+) {
+    try {
+        $db = getClientesDb();
+        upsertCliente($db, $dadosParaPersistencia);
+        $db->close();
+    } catch (Throwable $e) {
+        error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
     }
 }
 
@@ -302,6 +333,108 @@ session_write_close();
 if (function_exists('fastcgi_finish_request')) {
     // Libera a resposta para o cliente enquanto a atualização roda no shutdown handler.
     fastcgi_finish_request();
+}
+
+function complementarClienteComPayload(array $cliente, array $payload): array
+{
+    $enderecoPayload = $payload['endereco']['geral'] ?? ($payload['endereco'] ?? null);
+
+    if (!isset($cliente['endereco']) || !is_array($cliente['endereco'])) {
+        $cliente['endereco'] = [];
+    }
+
+    if (!isset($cliente['endereco']['geral']) || !is_array($cliente['endereco']['geral'])) {
+        $cliente['endereco']['geral'] = [];
+    }
+
+    if (is_array($enderecoPayload)) {
+        foreach (['endereco', 'numero', 'bairro', 'municipio', 'uf', 'cep'] as $campo) {
+            if (
+                (!isset($cliente['endereco']['geral'][$campo]) || trim((string) $cliente['endereco']['geral'][$campo]) === '')
+                && isset($enderecoPayload[$campo])
+                && $enderecoPayload[$campo] !== ''
+            ) {
+                $cliente['endereco']['geral'][$campo] = $enderecoPayload[$campo];
+            }
+        }
+    }
+
+    if ((empty($cliente['celular']) || !is_string($cliente['celular'])) && !empty($payload['celular'])) {
+        $cliente['celular'] = $payload['celular'];
+    }
+
+    if ((empty($cliente['telefone']) || !is_string($cliente['telefone'])) && !empty($payload['telefone'])) {
+        $cliente['telefone'] = $payload['telefone'];
+    }
+
+    if ((empty($cliente['numeroDocumento']) || !is_string($cliente['numeroDocumento'])) && !empty($payload['numeroDocumento'])) {
+        $cliente['numeroDocumento'] = $payload['numeroDocumento'];
+    }
+
+    if ((empty($cliente['nome']) || !is_string($cliente['nome'])) && !empty($payload['nome'])) {
+        $cliente['nome'] = $payload['nome'];
+    }
+
+    if (!isset($cliente['tipo']) && !empty($payload['tipo'])) {
+        $cliente['tipo'] = $payload['tipo'];
+    }
+
+    return $cliente;
+}
+
+function construirClienteParaNormalizacao(array $payload, ?array $clienteAtualizado, ?string $contatoId): array
+{
+    $id = null;
+    if (is_array($clienteAtualizado) && isset($clienteAtualizado['id'])) {
+        $id = (string) $clienteAtualizado['id'];
+    } elseif (!empty($payload['id'])) {
+        $id = (string) $payload['id'];
+    } elseif (!empty($contatoId)) {
+        $id = (string) $contatoId;
+    }
+
+    $cliente = [];
+    if ($id !== null && $id !== '') {
+        $cliente['id'] = $id;
+    }
+
+    if (!empty($payload['nome'])) {
+        $cliente['nome'] = $payload['nome'];
+    } elseif (is_array($clienteAtualizado) && !empty($clienteAtualizado['nome'])) {
+        $cliente['nome'] = $clienteAtualizado['nome'];
+    }
+
+    if (!empty($payload['tipo'])) {
+        $cliente['tipo'] = $payload['tipo'];
+    } elseif (is_array($clienteAtualizado) && !empty($clienteAtualizado['tipo'])) {
+        $cliente['tipo'] = $clienteAtualizado['tipo'];
+    }
+
+    if (!empty($payload['numeroDocumento'])) {
+        $cliente['numeroDocumento'] = $payload['numeroDocumento'];
+    } elseif (is_array($clienteAtualizado) && !empty($clienteAtualizado['numeroDocumento'])) {
+        $cliente['numeroDocumento'] = $clienteAtualizado['numeroDocumento'];
+    }
+
+    if (!empty($payload['celular'])) {
+        $cliente['celular'] = $payload['celular'];
+    } elseif (is_array($clienteAtualizado) && !empty($clienteAtualizado['celular'])) {
+        $cliente['celular'] = $clienteAtualizado['celular'];
+    }
+
+    if (!empty($payload['telefone'])) {
+        $cliente['telefone'] = $payload['telefone'];
+    } elseif (is_array($clienteAtualizado) && !empty($clienteAtualizado['telefone'])) {
+        $cliente['telefone'] = $clienteAtualizado['telefone'];
+    }
+
+    if (isset($payload['endereco']) && is_array($payload['endereco'])) {
+        $cliente['endereco'] = $payload['endereco'];
+    } elseif (is_array($clienteAtualizado) && isset($clienteAtualizado['endereco'])) {
+        $cliente['endereco'] = $clienteAtualizado['endereco'];
+    }
+
+    return $cliente;
 }
 
 /**
