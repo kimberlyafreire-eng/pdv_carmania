@@ -40,6 +40,7 @@ try {
 
     $venda['valor_total'] = (float) $venda['valor_total'];
     $venda['valor_desconto'] = (float) $venda['valor_desconto'];
+    $venda['transmitido'] = isset($venda['transmitido']) ? (int) $venda['transmitido'] : 1;
 
     $pagamentos = [];
     $stmtPag = $db->prepare('SELECT forma_pagamento_id, forma_pagamento_nome, valor

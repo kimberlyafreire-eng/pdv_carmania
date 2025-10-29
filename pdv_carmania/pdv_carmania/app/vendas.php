@@ -562,9 +562,30 @@ if (!isset($_SESSION['usuario'])) {
           return `${nome} (${valor})`;
         }).join(' + ');
 
+        const transmitido = Number(venda.transmitido) !== 0;
+        const idExibicao = transmitido ? venda.id : `Pendente (#${Math.abs(venda.id)})`;
+        const statusBadge = transmitido ? '' : '<span class="badge bg-warning text-dark ms-1">Pendente</span>';
+
+        const botoes = [];
+        if (transmitido) {
+          botoes.push(`
+              <button type="button" class="btn btn-outline-secondary btn-sm recibo-venda-btn" title="Gerar recibo da venda">
+                Gerar recibo
+              </button>`);
+        } else {
+          botoes.push(`
+              <button type="button" class="btn btn-outline-primary btn-sm transmitir-venda-btn" title="Transmitir venda">
+                Transmitir venda
+              </button>`);
+        }
+        botoes.push(`
+              <button type="button" class="btn btn-outline-danger btn-sm cancelar-venda-btn" title="Cancelar venda">
+                Cancelar venda
+              </button>`);
+
         tr.innerHTML = `
           <td>${formatarDataHora(venda.data_hora)}</td>
-          <td>${venda.id}</td>
+          <td>${idExibicao}${statusBadge ? `<div class="mt-1">${statusBadge}</div>` : ''}</td>
           <td>${venda.contato_nome || '-'}</td>
           <td>${formatoMoeda.format(venda.valor_total || 0)}</td>
           <td>${formatoMoeda.format(venda.valor_desconto || 0)}</td>
@@ -572,18 +593,17 @@ if (!isset($_SESSION['usuario'])) {
           <td>${venda.usuario_nome || venda.usuario_login || '-'}</td>
           <td class="text-end">
             <div class="d-flex gap-2 justify-content-end flex-wrap">
-              <button type="button" class="btn btn-outline-secondary btn-sm recibo-venda-btn" title="Gerar recibo da venda">
-                Gerar recibo
-              </button>
-              <button type="button" class="btn btn-outline-danger btn-sm cancelar-venda-btn" title="Cancelar venda">
-                Cancelar venda
-              </button>
+              ${botoes.join('\n')}
             </div>
           </td>
         `;
 
         tr.addEventListener('click', (event) => {
           if (event.target.closest('.recibo-venda-btn')) {
+            event.stopPropagation();
+            return;
+          }
+          if (event.target.closest('.transmitir-venda-btn')) {
             event.stopPropagation();
             return;
           }
@@ -599,6 +619,14 @@ if (!isset($_SESSION['usuario'])) {
           btnRecibo.addEventListener('click', async (event) => {
             event.stopPropagation();
             await gerarReciboVenda(venda.id, btnRecibo);
+          });
+        }
+
+        const btnTransmitir = tr.querySelector('.transmitir-venda-btn');
+        if (btnTransmitir) {
+          btnTransmitir.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            await transmitirVenda(venda.id, btnTransmitir);
           });
         }
 
@@ -732,7 +760,11 @@ if (!isset($_SESSION['usuario'])) {
         }
 
         const venda = json.venda || {};
+        const vendaTransmitida = Number(venda.transmitido) !== 0;
         detalheSituacao.textContent = venda.situacao_nome ? `Situação: ${venda.situacao_nome}` : 'Situação não informada';
+        if (!vendaTransmitida) {
+          detalheSituacao.textContent += ' • Aguardando transmissão ao Bling';
+        }
         detalheDataHora.textContent = formatarDataHora(venda.data_hora || '');
         detalheCliente.textContent = venda.contato_nome || '-';
         detalheUsuario.textContent = venda.usuario_nome || venda.usuario_login || '-';
@@ -809,6 +841,47 @@ if (!isset($_SESSION['usuario'])) {
       event.preventDefault();
       carregarVendas();
     });
+
+    async function transmitirVenda(id, botao) {
+      if (!id) return;
+      limparMensagem();
+      let labelOriginal = '';
+      if (botao) {
+        labelOriginal = botao.innerHTML;
+        botao.disabled = true;
+        botao.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Transmitindo...';
+      }
+
+      try {
+        const resposta = await fetchComBackoff('../api/venda-transmitir.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+          tentativas: 4,
+          atrasoInicialMs: 700,
+        });
+        const json = await resposta.json();
+        if (!resposta.ok || !json.ok) {
+          throw new Error(json.erro || 'Falha ao transmitir a venda.');
+        }
+
+        const mensagem = json.mensagem || 'Venda transmitida com sucesso.';
+        exibirMensagem('success', mensagem);
+        setTimeout(limparMensagem, 4000);
+        await carregarVendas();
+      } catch (erro) {
+        if (erro?.name === 'AbortError') {
+          return;
+        }
+        console.error(erro);
+        exibirMensagem('danger', erro.message || 'Não foi possível transmitir a venda.');
+      } finally {
+        if (botao) {
+          botao.disabled = false;
+          botao.innerHTML = labelOriginal || 'Transmitir venda';
+        }
+      }
+    }
 
     async function gerarReciboVenda(id, botao) {
       if (!id) return;

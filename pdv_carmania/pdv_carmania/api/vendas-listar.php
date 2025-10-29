@@ -108,7 +108,7 @@ if ($vendedorParam !== '') {
 
 try {
     $sql = 'SELECT v.id, v.data_hora, v.contato_id, v.contato_nome, v.usuario_nome, v.usuario_login,
-                   v.valor_total, v.valor_desconto, v.situacao_id, s.nome AS situacao_nome
+                   v.valor_total, v.valor_desconto, v.situacao_id, v.transmitido, s.nome AS situacao_nome
             FROM vendas v
             LEFT JOIN situacoes_pedido s ON s.id = v.situacao_id
             WHERE DATE(v.data_hora) BETWEEN :inicio AND :fim';
@@ -140,6 +140,7 @@ try {
         $row['valor_total'] = (float) $row['valor_total'];
         $row['valor_desconto'] = (float) $row['valor_desconto'];
         $row['situacao_id'] = $row['situacao_id'] !== null ? (int) $row['situacao_id'] : null;
+        $row['transmitido'] = isset($row['transmitido']) ? (int) $row['transmitido'] : 1;
         $vendas[] = $row;
         $ids[] = (int) $row['id'];
     }

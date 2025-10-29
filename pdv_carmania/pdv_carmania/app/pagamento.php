@@ -752,6 +752,15 @@ if ($usuarioLogado) {
         const data=await res.json();
         if(!res.ok||!data.ok) throw new Error(data?.erro || (Array.isArray(data) ? JSON.stringify(data) : 'Falha ao salvar venda.'));
 
+        if(data?.transmitido === false || data?.transmitido === 0){
+          localStorage.clear();
+          const mensagem = data?.mensagem ? String(data.mensagem) : 'Venda salva localmente. O recibo ficará disponível após a transmissão.';
+          const detalhe = data?.detalhe ? String(data.detalhe) : '';
+          alert(`${mensagem}${detalhe ? `\n\nDetalhes: ${detalhe}` : ''}`);
+          window.location.href='vendas.php';
+          return;
+        }
+
         const numeroNfe = data?.nfeNumero ?? null;
         const mensagemErroNfe = typeof data?.nfeErro === 'string' ? data.nfeErro.trim() : '';
 

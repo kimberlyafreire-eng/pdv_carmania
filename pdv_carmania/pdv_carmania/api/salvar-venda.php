@@ -717,6 +717,51 @@ if ($descontoAplicado > 0) {
 
 // 🚀 1️⃣ Envia pedido
 $res = bling_request('POST', 'pedidos/vendas', $pedidoPayload);
+if ($res['http'] === 429) {
+    $mensagemErro = extrairMensagemErroResposta($res['body']) ?? 'Limite de requisições atingido. Tente novamente mais tarde.';
+    $idVendaLocal = -1 * (int) round(microtime(true) * 1000);
+    $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+    $depositoIdLocal = $input['deposito']['id'] ?? $input['depositoId'] ?? null;
+
+    $saldoCrediarioAnteriorPersistir = $saldoCrediarioAnterior !== null ? round((float) $saldoCrediarioAnterior, 2) : null;
+    $valorCrediarioPersistir = ($isCrediario && $valorCrediarioGerado > 0)
+        ? round((float) $valorCrediarioGerado, 2)
+        : null;
+
+    try {
+        registrarVendaLocal([
+            'id' => $idVendaLocal,
+            'data_hora' => date('Y-m-d H:i:s'),
+            'contato_id' => $clienteId ? (int) $clienteId : null,
+            'contato_nome' => $clienteNome,
+            'usuario_login' => $usuarioResponsavel,
+            'usuario_nome' => $usuarioRecibo,
+            'usuario_id' => $vendedorId,
+            'deposito_id' => $depositoIdLocal ? (int) $depositoIdLocal : null,
+            'deposito_nome' => $depositoNome,
+            'situacao_id' => 21,
+            'valor_total' => $totalFinal,
+            'valor_desconto' => $descontoAplicado,
+            'saldo_crediario_anterior' => $saldoCrediarioAnteriorPersistir,
+            'saldo_crediario_novo' => null,
+            'valor_crediario_venda' => $valorCrediarioPersistir,
+            'transmitido' => 0,
+        ], $pagamentos, $carrinho);
+        logMsg("💾 Venda salva localmente com ID provisório {$idVendaLocal} após erro 429.");
+    } catch (Throwable $e) {
+        logMsg('❌ Falha ao registrar venda local após erro 429: ' . $e->getMessage());
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'transmitido' => false,
+        'mensagem' => 'Venda salva localmente. O recibo ficará disponível após a transmissão ao Bling.',
+        'detalhe' => $mensagemErro,
+        'vendaId' => $idVendaLocal,
+    ]);
+    exit;
+}
+
 if ($res['http'] < 200 || $res['http'] >= 300) {
     $body = json_decode($res['body'], true);
     $erro = $body['error']['fields'][0]['msg'] ?? $res['body'];
@@ -998,6 +1043,7 @@ if ($pedidoId) {
             'contato_nome' => $clienteNome,
             'usuario_login' => $usuarioResponsavel,
             'usuario_nome' => $usuarioRecibo,
+            'usuario_id' => $vendedorId,
             'deposito_id' => $depositoIdCaixa ? (int) $depositoIdCaixa : null,
             'deposito_nome' => $depositoNome,
             'situacao_id' => $situacaoRegistrada > 0 ? $situacaoRegistrada : 9,
@@ -1006,6 +1052,7 @@ if ($pedidoId) {
             'saldo_crediario_anterior' => $saldoCrediarioAnteriorPersistir,
             'saldo_crediario_novo' => $saldoCrediarioNovoPersistir,
             'valor_crediario_venda' => $valorCrediarioPersistir,
+            'transmitido' => 1,
         ], $pagamentos, $carrinho);
         logMsg('💾 Venda registrada no banco local.');
     } catch (Throwable $e) {
@@ -1045,6 +1092,7 @@ $responsePayload = [
     'ok' => true,
     'pedidoId' => $pedidoId,
     'reciboHtml' => $reciboHtml,
+    'transmitido' => true,
 ];
 
 if (!empty($nfeResultado['sucesso'])) {
