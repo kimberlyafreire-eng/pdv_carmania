@@ -285,7 +285,9 @@ if (is_array($clienteAtualizado)) {
             scheduleClientesRefresh($refreshUrl, session_name(), session_id());
         }
     } catch (Throwable $e) {
-        error_log('[salvar-cliente.php] Erro ao preparar atualização do cache de clientes: ' . $e->getMessage());
+        logSalvarClienteDetalhado('Erro ao preparar atualização do cache de clientes: ' . $e->getMessage(), [
+            'exception' => get_class($e),
+        ]);
     }
 }
 
@@ -316,8 +318,21 @@ if (
         upsertCliente($db, $dadosParaPersistencia);
         $db->close();
     } catch (Throwable $e) {
-        error_log('[salvar-cliente.php] Falha ao atualizar banco local: ' . $e->getMessage());
+        logSalvarClienteDetalhado('Falha ao atualizar banco local: ' . $e->getMessage(), [
+            'exception' => get_class($e),
+            'cliente_id' => $dadosParaPersistencia['id'] ?? null,
+            'cliente_nome' => $dadosParaPersistencia['nome'] ?? null,
+            'dados_para_persistencia' => resumirClienteParaLog($dadosParaPersistencia),
+        ]);
     }
+} elseif (is_array($dadosParaPersistencia)) {
+    logSalvarClienteDetalhado('Cliente não gravado no banco local por ausência de identificador.', [
+        'cliente_id' => $dadosParaPersistencia['id'] ?? null,
+        'cliente_nome' => $dadosParaPersistencia['nome'] ?? null,
+        'payload_id' => $payload['id'] ?? null,
+        'contato_id' => $contatoId,
+        'dados_para_persistencia' => resumirClienteParaLog($dadosParaPersistencia),
+    ]);
 }
 
 $mensagem = $contatoId ? 'Cliente atualizado com sucesso!' : 'Cliente cadastrado com sucesso!';
@@ -475,13 +490,61 @@ function scheduleClientesRefresh(string $url, string $sessionName, string $sessi
                 ]);
 
                 if (@file_get_contents($url, false, $context) === false) {
-                    error_log('[salvar-cliente.php] Falha ao solicitar atualização do cache de clientes em ' . $url);
+                    logSalvarClienteDetalhado('Falha ao solicitar atualização do cache de clientes.', [
+                        'url' => $url,
+                    ]);
                 }
             } catch (Throwable $e) {
-                error_log('[salvar-cliente.php] Erro ao chamar clientes.php: ' . $e->getMessage());
+                logSalvarClienteDetalhado('Erro ao chamar clientes.php: ' . $e->getMessage(), [
+                    'exception' => get_class($e),
+                    'url' => $url,
+                ]);
             }
         },
         $url,
         $cookieHeader
     );
+}
+
+function logSalvarClienteDetalhado(string $mensagem, array $contexto = []): void
+{
+    $prefixo = '[salvar-cliente.php] ';
+
+    if (!empty($contexto)) {
+        $json = json_encode($contexto, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($json === false) {
+            $json = var_export($contexto, true);
+        }
+
+        if (is_string($json) && strlen($json) > 2000) {
+            $json = substr($json, 0, 2000) . '...';
+        }
+
+        error_log($prefixo . $mensagem . ' | contexto: ' . $json);
+
+        return;
+    }
+
+    error_log($prefixo . $mensagem);
+}
+
+function resumirClienteParaLog($dados): array
+{
+    if (!is_array($dados)) {
+        return ['tipo' => gettype($dados)];
+    }
+
+    $camposPrincipais = ['id', 'nome', 'numeroDocumento', 'numero_documento', 'celular', 'telefone', 'tipo', 'codigo'];
+    $resumo = [];
+    foreach ($camposPrincipais as $campo) {
+        if (isset($dados[$campo])) {
+            $resumo[$campo] = $dados[$campo];
+        }
+    }
+
+    if (isset($dados['endereco']) && is_array($dados['endereco'])) {
+        $resumo['endereco'] = $dados['endereco'];
+    }
+
+    return $resumo;
 }
