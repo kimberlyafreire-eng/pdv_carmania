@@ -252,6 +252,39 @@ function buscarClientesLocalmente(SQLite3 $db): array
 }
 
 /**
+ * Busca um único cliente salvo localmente.
+ */
+function buscarClienteLocalPorId(SQLite3 $db, string $id): ?array
+{
+    $idNormalizado = trim($id);
+    if ($idNormalizado === '') {
+        return null;
+    }
+
+    $stmt = $db->prepare('SELECT * FROM clientes WHERE id = :id LIMIT 1');
+    if (!$stmt instanceof SQLite3Stmt) {
+        return null;
+    }
+
+    $stmt->bindValue(':id', $idNormalizado, SQLITE3_TEXT);
+    $resultado = $stmt->execute();
+    if ($resultado === false) {
+        $stmt->close();
+        return null;
+    }
+
+    $linha = $resultado->fetchArray(SQLITE3_ASSOC);
+    $resultado->finalize();
+    $stmt->close();
+
+    if (!is_array($linha)) {
+        return null;
+    }
+
+    return montarEstruturaCliente($linha);
+}
+
+/**
  * Extrai e normaliza o endereço principal de um cliente, independente do formato
  * utilizado na origem (API, cache JSON ou banco local).
  */

@@ -143,6 +143,173 @@ function consultarPaginaContatos(int $pagina, int $limite, string $accessToken):
     ];
 }
 
+function valorClienteVazio($valor): bool
+{
+    if ($valor === null) {
+        return true;
+    }
+
+    if (is_string($valor)) {
+        return trim($valor) === '';
+    }
+
+    if (is_array($valor)) {
+        if ($valor === []) {
+            return true;
+        }
+
+        foreach ($valor as $item) {
+            if (!valorClienteVazio($item)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+function mesclarEstruturaCliente(array $destino, array $fonte): array
+{
+    foreach ($fonte as $chave => $valorFonte) {
+        if (!array_key_exists($chave, $destino)) {
+            $destino[$chave] = $valorFonte;
+            continue;
+        }
+
+        $valorDestino = $destino[$chave];
+
+        if (is_array($valorDestino) && is_array($valorFonte)) {
+            $destino[$chave] = mesclarEstruturaClienteArray($valorDestino, $valorFonte);
+            continue;
+        }
+
+        if (valorClienteVazio($valorDestino) && !valorClienteVazio($valorFonte)) {
+            $destino[$chave] = $valorFonte;
+        }
+    }
+
+    return $destino;
+}
+
+function mesclarEstruturaClienteArray(array $destino, array $fonte): array
+{
+    $destinoSequencial = array_keys($destino) === range(0, count($destino) - 1);
+    $fonteSequencial = array_keys($fonte) === range(0, count($fonte) - 1);
+
+    if ($destinoSequencial && $fonteSequencial) {
+        if (empty($destino) && !empty($fonte)) {
+            return $fonte;
+        }
+
+        return $destino;
+    }
+
+    foreach ($fonte as $chave => $valorFonte) {
+        if (!array_key_exists($chave, $destino)) {
+            $destino[$chave] = $valorFonte;
+            continue;
+        }
+
+        if (valorClienteVazio($destino[$chave]) && !valorClienteVazio($valorFonte)) {
+            $destino[$chave] = $valorFonte;
+            continue;
+        }
+
+        if (is_array($destino[$chave]) && is_array($valorFonte)) {
+            $destino[$chave] = mesclarEstruturaClienteArray($destino[$chave], $valorFonte);
+        }
+    }
+
+    return $destino;
+}
+
+function consultarContatoIndividual(string $idContato, string $accessToken): ?array
+{
+    $idNormalizado = trim($idContato);
+    if ($idNormalizado === '') {
+        return null;
+    }
+
+    $query = http_build_query([
+        'with' => 'enderecos',
+    ], '', '&', PHP_QUERY_RFC3986);
+
+    $url = 'https://www.bling.com.br/Api/v3/contatos/' . rawurlencode($idNormalizado);
+    if ($query !== '') {
+        $url .= '?' . $query;
+    }
+
+    $tentativas = 0;
+    $tentativasMaximas = 5;
+    $atraso = 1;
+
+    while ($tentativas < $tentativasMaximas) {
+        $tentativas++;
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $accessToken,
+        ]);
+
+        $resposta = curl_exec($ch);
+        if ($resposta === false) {
+            $erroCurl = curl_error($ch);
+            curl_close($ch);
+            error_log('[clientes.php] Falha ao consultar contato individual ' . $idNormalizado . ': ' . $erroCurl);
+            return null;
+        }
+
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $tamanhoCabecalho = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $cabecalhoBruto = substr($resposta, 0, $tamanhoCabecalho);
+        $corpo = substr($resposta, $tamanhoCabecalho);
+        curl_close($ch);
+
+        if ($httpCode === 404) {
+            return null;
+        }
+
+        if ($httpCode === 429 || ($httpCode >= 500 && $httpCode < 600)) {
+            $retryAfter = null;
+            $linhasCabecalho = explode("\r\n", $cabecalhoBruto);
+            foreach ($linhasCabecalho as $linha) {
+                if (stripos($linha, 'Retry-After:') === 0) {
+                    $valor = trim(substr($linha, strlen('Retry-After:')));
+                    if (is_numeric($valor)) {
+                        $retryAfter = (int) $valor;
+                    }
+                    break;
+                }
+            }
+
+            $espera = $retryAfter !== null ? max(1, $retryAfter) : $atraso;
+            sleep($espera);
+            $atraso = min($atraso * 2, 30);
+            continue;
+        }
+
+        if ($httpCode !== 200) {
+            error_log('[clientes.php] Erro ao consultar contato individual ' . $idNormalizado . ': ' . $corpo);
+            return null;
+        }
+
+        $dados = json_decode($corpo, true);
+        if (!is_array($dados) || !isset($dados['data']) || !is_array($dados['data'])) {
+            error_log('[clientes.php] Resposta inesperada ao consultar contato individual ' . $idNormalizado . '.');
+            return null;
+        }
+
+        return $dados['data'];
+    }
+
+    return null;
+}
+
 $pagina = 1;
 $limite = 100;
 $todosClientes = [];
@@ -190,15 +357,34 @@ while (true) {
 
 // Normaliza os clientes para evitar dados quebrados no front-end.
 $clientesNormalizados = [];
+$clientesCompletos = [];
 foreach ($todosClientes as $clienteBruto) {
     if (!is_array($clienteBruto)) {
         continue;
     }
-    $clienteNormalizado = normalizarClienteParaResposta($clienteBruto);
+
+    $clienteCompleto = $clienteBruto;
+
+    if (empty(extrairEnderecoPrincipal($clienteCompleto)) && $db instanceof SQLite3) {
+        $clienteLocal = buscarClienteLocalPorId($db, (string) ($clienteBruto['id'] ?? ''));
+        if (is_array($clienteLocal)) {
+            $clienteCompleto = mesclarEstruturaCliente($clienteCompleto, $clienteLocal);
+        }
+    }
+
+    if (empty(extrairEnderecoPrincipal($clienteCompleto))) {
+        $detalhes = consultarContatoIndividual((string) ($clienteBruto['id'] ?? ''), $accessToken);
+        if (is_array($detalhes)) {
+            $clienteCompleto = mesclarEstruturaCliente($clienteCompleto, $detalhes);
+        }
+    }
+
+    $clienteNormalizado = normalizarClienteParaResposta($clienteCompleto);
     if ($clienteNormalizado === null) {
         continue;
     }
     $clientesNormalizados[$clienteNormalizado['id']] = $clienteNormalizado;
+    $clientesCompletos[$clienteNormalizado['id']] = $clienteCompleto;
 }
 
 $clientesNormalizados = array_values($clientesNormalizados);
@@ -225,7 +411,8 @@ $dadosResposta = ['data' => $clientesNormalizados];
 
 if ($db instanceof SQLite3) {
     try {
-        upsertClientes($db, $todosClientes);
+        $clientesParaPersistir = array_values($clientesCompletos);
+        upsertClientes($db, $clientesParaPersistir);
         removerClientesForaDaLista($db, array_column($clientesNormalizados, 'id'));
         $clientesLocal = buscarClientesLocalmente($db);
         if (!empty($clientesLocal)) {
