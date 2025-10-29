@@ -88,25 +88,11 @@ function upsertCliente(SQLite3 $db, array $cliente): void
     static $stmt = null;
 
     if (!$stmt instanceof SQLite3Stmt) {
-        $stmt = $db->prepare('INSERT INTO clientes (
+        $stmt = $db->prepare('INSERT OR REPLACE INTO clientes (
                 id, nome, tipo, numero_documento, celular, telefone, codigo, rua, numero, bairro, cidade, estado, cep, atualizado_em
             ) VALUES (
                 :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :numero, :bairro, :cidade, :estado, :cep, :atualizado_em
-            )
-            ON CONFLICT(id) DO UPDATE SET
-                nome = excluded.nome,
-                tipo = excluded.tipo,
-                numero_documento = excluded.numero_documento,
-                celular = excluded.celular,
-                telefone = excluded.telefone,
-                codigo = excluded.codigo,
-                rua = excluded.rua,
-                numero = excluded.numero,
-                bairro = excluded.bairro,
-                cidade = excluded.cidade,
-                estado = excluded.estado,
-                cep = excluded.cep,
-                atualizado_em = excluded.atualizado_em');
+            )');
         if (!$stmt instanceof SQLite3Stmt) {
             $mensagemErro = trim($db->lastErrorMsg() ?: '');
             $stmt = null;
@@ -183,27 +169,47 @@ function removerClientesForaDaLista(SQLite3 $db, array $idsAtuais): void
         return;
     }
 
-    $placeholders = implode(',', array_fill(0, count($idsNormalizados), '?'));
-    $stmt = $db->prepare("DELETE FROM clientes WHERE id NOT IN ($placeholders)");
+    $idsExistentes = [];
+    $resultado = $db->query('SELECT id FROM clientes');
+    if ($resultado instanceof SQLite3Result) {
+        while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+            if (isset($linha['id'])) {
+                $idsExistentes[] = (string) $linha['id'];
+            }
+        }
+        $resultado->finalize();
+    }
+
+    if (empty($idsExistentes)) {
+        return;
+    }
+
+    $stmt = $db->prepare('DELETE FROM clientes WHERE id = :id');
     if (!$stmt instanceof SQLite3Stmt) {
         $mensagemErro = trim($db->lastErrorMsg() ?: '');
-        throw new RuntimeException('Não foi possível preparar a limpeza de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
+        throw new RuntimeException('Não foi possível preparar a remoção de clientes ausentes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
     }
 
-    $indice = 1;
-    foreach (array_keys($idsNormalizados) as $id) {
-        $stmt->bindValue($indice, $id, SQLITE3_TEXT);
-        $indice++;
+    foreach ($idsExistentes as $id) {
+        if (isset($idsNormalizados[$id])) {
+            continue;
+        }
+
+        $stmt->reset();
+        if (method_exists($stmt, 'clear')) {
+            $stmt->clear();
+        }
+        $stmt->bindValue(':id', $id, SQLITE3_TEXT);
+        $resultado = $stmt->execute();
+        if ($resultado === false) {
+            $stmt->close();
+            throw new RuntimeException('Falha ao remover cliente ausente do banco local.');
+        }
+        if ($resultado instanceof SQLite3Result) {
+            $resultado->finalize();
+        }
     }
 
-    $resultado = $stmt->execute();
-    if ($resultado === false) {
-        $stmt->close();
-        throw new RuntimeException('Falha ao remover clientes ausentes da lista informada.');
-    }
-
-    $resultado->finalize();
-    $stmt->clear();
     $stmt->close();
 }
 
