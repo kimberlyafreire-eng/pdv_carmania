@@ -96,8 +96,54 @@ $access_token = getAccessToken();
 if (!$access_token) die(json_encode(['erro'=>'Access token inválido ou não pôde ser atualizado']));
 
 // 🚀 Função de requisições ao Bling com renovação automática
+function obterDelayBlingUs(): int
+{
+    static $delayUs = null;
+
+    if ($delayUs !== null) {
+        return $delayUs;
+    }
+
+    $defaultDelayMs = 1000; // 1 chamada por segundo
+    $delayMs = $defaultDelayMs;
+    $delayConfigPath = __DIR__ . '/config/bling-delay.php';
+
+    if (file_exists($delayConfigPath)) {
+        $configDelay = include $delayConfigPath;
+        if (is_array($configDelay) && isset($configDelay['delayMs'])) {
+            $delayMs = (int) $configDelay['delayMs'];
+        } elseif (is_numeric($configDelay)) {
+            $delayMs = (int) $configDelay;
+        }
+    }
+
+    $envDelay = getenv('BLING_REQUEST_DELAY_MS');
+    if ($envDelay !== false) {
+        $delayMs = (int) $envDelay;
+    }
+
+    if ($delayMs < $defaultDelayMs) {
+        $delayMs = $defaultDelayMs;
+    }
+
+    $delayUs = $delayMs * 1000;
+
+    return $delayUs;
+}
+
+function aplicarDelayBling(): void
+{
+    $delayUs = obterDelayBlingUs();
+
+    if ($delayUs > 0) {
+        usleep($delayUs);
+    }
+}
+
 function bling_request($method, $path, $body = null) {
     global $blingBase;
+
+    aplicarDelayBling();
 
     $url = rtrim($blingBase, '/') . '/' . ltrim($path, '/');
     $headers = [
