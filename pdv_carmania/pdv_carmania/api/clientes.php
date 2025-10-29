@@ -28,7 +28,7 @@ try {
     importarClientesCache($db, $caminhoCache);
     if (!$forcarAtualizacao) {
         $clientesLocal = buscarClientesLocalmente($db);
-        if (!empty($clientesLocal)) {
+        if (!empty($clientesLocal) && listaClientesComEnderecoCompleto($clientesLocal)) {
             echo json_encode(['data' => $clientesLocal], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
             $db->close();
             exit();
@@ -141,6 +141,62 @@ function consultarPaginaContatos(int $pagina, int $limite, string $accessToken):
         'status' => 429,
         'mensagem' => 'Limite de tentativas ao consultar o Bling excedido',
     ];
+}
+
+function listaClientesComEnderecoCompleto(array $clientes): bool
+{
+    foreach ($clientes as $cliente) {
+        if (!is_array($cliente)) {
+            continue;
+        }
+
+        $enderecos = $cliente['endereco'] ?? null;
+        if (!is_array($enderecos)) {
+            continue;
+        }
+
+        $candidatos = [];
+        if (isset($enderecos['geral']) && is_array($enderecos['geral'])) {
+            $candidatos[] = $enderecos['geral'];
+        }
+
+        foreach (['principal', 'cobranca', 'cobrança', 'entrega'] as $rotulo) {
+            if (isset($enderecos[$rotulo]) && is_array($enderecos[$rotulo])) {
+                $candidatos[] = $enderecos[$rotulo];
+            }
+        }
+
+        if (array_values($enderecos) !== $enderecos) {
+            $candidatos[] = $enderecos;
+        }
+
+        foreach ($candidatos as $endereco) {
+            if (!is_array($endereco)) {
+                continue;
+            }
+
+            $camposObrigatorios = ['endereco', 'numero', 'bairro', 'municipio', 'uf', 'cep'];
+            $completo = true;
+            foreach ($camposObrigatorios as $campo) {
+                $valor = $endereco[$campo] ?? null;
+                if (!is_scalar($valor)) {
+                    $completo = false;
+                    break;
+                }
+
+                if (trim((string) $valor) === '') {
+                    $completo = false;
+                    break;
+                }
+            }
+
+            if ($completo) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 function valorClienteVazio($valor): bool
@@ -415,7 +471,7 @@ if ($db instanceof SQLite3) {
         upsertClientes($db, $clientesParaPersistir);
         removerClientesForaDaLista($db, array_column($clientesNormalizados, 'id'));
         $clientesLocal = buscarClientesLocalmente($db);
-        if (!empty($clientesLocal)) {
+        if (!empty($clientesLocal) && listaClientesComEnderecoCompleto($clientesLocal)) {
             $dadosResposta = ['data' => $clientesLocal];
         }
     } catch (Throwable $e) {
