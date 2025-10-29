@@ -110,6 +110,7 @@ if (!isset($_SESSION['usuario'])) {
           <span class="input-group-text">🔍</span>
           <input type="text" id="buscaCliente" class="form-control" placeholder="Pesquisar clientes" autocomplete="off" />
           <button id="btnRecarregar" class="btn btn-outline-secondary" type="button">Atualizar</button>
+          <button id="btnSincronizar" class="btn btn-outline-primary" type="button">Sincronizar Bling</button>
           <button id="btnSaldoNegativo" class="btn btn-outline-danger" type="button" aria-pressed="false">Saldo Negativo</button>
         </div>
         <div id="listaClientes" class="mt-3"></div>
@@ -161,12 +162,17 @@ if (!isset($_SESSION['usuario'])) {
             <input type="text" class="form-control" id="endereco" name="endereco" placeholder="Rua, número e complemento" maxlength="150" />
           </div>
 
-          <div class="col-12 col-md-6">
+          <div class="col-12 col-md-4">
+            <label for="numero" class="form-label">Número</label>
+            <input type="text" class="form-control" id="numero" name="numero" maxlength="20" />
+          </div>
+
+          <div class="col-12 col-md-4">
             <label for="bairro" class="form-label">Bairro</label>
             <input type="text" class="form-control" id="bairro" name="bairro" maxlength="80" />
           </div>
 
-          <div class="col-12 col-md-6">
+          <div class="col-12 col-md-4">
             <label for="cidade" class="form-label">Cidade</label>
             <input type="text" class="form-control" id="cidade" name="cidade" maxlength="80" />
           </div>
@@ -196,6 +202,7 @@ if (!isset($_SESSION['usuario'])) {
     const formCliente = document.getElementById('formCliente');
     const btnNovoCliente = document.getElementById('btnNovoCliente');
     const btnRecarregar = document.getElementById('btnRecarregar');
+    const btnSincronizar = document.getElementById('btnSincronizar');
     const btnSaldoNegativo = document.getElementById('btnSaldoNegativo');
     const btnVoltarLista = document.getElementById('btnVoltarLista');
 
@@ -223,6 +230,7 @@ if (!isset($_SESSION['usuario'])) {
     const celularInput = document.getElementById('celular');
     const telefoneInput = document.getElementById('telefone');
     const enderecoInput = document.getElementById('endereco');
+    const numeroInput = document.getElementById('numero');
     const bairroInput = document.getElementById('bairro');
     const cidadeInput = document.getElementById('cidade');
     const estadoInput = document.getElementById('estado');
@@ -507,6 +515,7 @@ if (!isset($_SESSION['usuario'])) {
 
       const endereco = cliente?.endereco?.geral || {};
       enderecoInput.value = endereco.endereco || '';
+      numeroInput.value = endereco.numero || '';
       bairroInput.value = endereco.bairro || '';
       cidadeInput.value = endereco.municipio || '';
       estadoInput.value = endereco.uf || '';
@@ -746,6 +755,58 @@ if (!isset($_SESSION['usuario'])) {
       return json;
     }
 
+    async function sincronizarClientesBling() {
+      if (!btnSincronizar) {
+        return;
+      }
+
+      const textoOriginal = btnSincronizar.innerHTML;
+      btnSincronizar.disabled = true;
+      btnSincronizar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sincronizando...';
+
+      try {
+        const resposta = await fetch('../api/sincronizar-clientes.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        });
+
+        const json = await resposta.json().catch(() => ({}));
+        if (!resposta.ok || !json.sucesso) {
+          const mensagemErro = json.erro || 'Não foi possível sincronizar os clientes.';
+          throw new Error(mensagemErro);
+        }
+
+        const totais = json.totais && typeof json.totais === 'object' ? json.totais : null;
+        if (totais && typeof totais.totalLocal === 'number') {
+          const partes = [];
+          if (typeof totais.novos === 'number' && totais.novos > 0) {
+            partes.push(`${totais.novos} ${totais.novos === 1 ? 'novo cliente' : 'novos clientes'}`);
+          }
+          if (typeof totais.removidos === 'number' && totais.removidos > 0) {
+            partes.push(`${totais.removidos} ${totais.removidos === 1 ? 'cliente removido' : 'clientes removidos'}`);
+          }
+          const detalhes = partes.length ? ` (${partes.join(' • ')})` : '';
+          setMensagem('success', `${json.mensagem || 'Clientes sincronizados com sucesso.'}${detalhes}`);
+        } else {
+          setMensagem('success', json.mensagem || 'Clientes sincronizados com sucesso.');
+        }
+
+        if (HABILITAR_SALDOS) {
+          limparCacheSaldos();
+        }
+
+        await carregarClientes();
+      } catch (erro) {
+        setMensagem('danger', erro.message);
+      } finally {
+        btnSincronizar.disabled = false;
+        btnSincronizar.innerHTML = textoOriginal;
+      }
+    }
+
     buscaClienteInput.addEventListener('input', () => {
       atualizarListaClientes(buscaClienteInput.value);
     });
@@ -757,6 +818,12 @@ if (!isset($_SESSION['usuario'])) {
       atualizarListaClientes(buscaClienteInput.value);
       carregarClientes(true);
     });
+
+    if (btnSincronizar) {
+      btnSincronizar.addEventListener('click', () => {
+        sincronizarClientesBling();
+      });
+    }
 
     btnSaldoNegativo.addEventListener('click', () => {
       if (!HABILITAR_SALDOS) {
@@ -808,6 +875,7 @@ if (!isset($_SESSION['usuario'])) {
         celular: celularInput.value.trim(),
         telefone: telefoneInput.value.trim(),
         endereco: enderecoInput.value.trim(),
+        numero: numeroInput.value.trim(),
         bairro: bairroInput.value.trim(),
         cidade: cidadeInput.value.trim(),
         estado: estadoInput.value.trim(),

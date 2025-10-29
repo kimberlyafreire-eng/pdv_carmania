@@ -38,6 +38,7 @@ function getClientesDb(): SQLite3
         telefone TEXT,
         codigo TEXT,
         rua TEXT,
+        numero TEXT,
         bairro TEXT,
         cidade TEXT,
         estado TEXT,
@@ -47,7 +48,38 @@ function getClientesDb(): SQLite3
 
     $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome COLLATE NOCASE)');
 
+    foreach (['rua', 'numero', 'bairro', 'cidade', 'estado', 'cep'] as $colunaEndereco) {
+        garantirColunaClientes($db, $colunaEndereco, 'TEXT');
+    }
+
     return $db;
+}
+
+/**
+ * Garante que a coluna informada exista na tabela de clientes.
+ */
+function garantirColunaClientes(SQLite3 $db, string $coluna, string $tipo): void
+{
+    $colunas = [];
+    $resultado = $db->query('PRAGMA table_info(clientes)');
+    if ($resultado instanceof SQLite3Result) {
+        while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+            if (isset($linha['name'])) {
+                $colunas[$linha['name']] = true;
+            }
+        }
+        $resultado->finalize();
+    }
+
+    if (!isset($colunas[$coluna])) {
+        $colunaLimpa = preg_replace('/[^a-z0-9_]/i', '', $coluna);
+        if ($colunaLimpa === '') {
+            return;
+        }
+
+        $sql = sprintf('ALTER TABLE clientes ADD COLUMN "%s" %s', $colunaLimpa, $tipo);
+        $db->exec($sql);
+    }
 }
 
 /**
@@ -58,24 +90,11 @@ function upsertCliente(SQLite3 $db, array $cliente): void
     static $stmt = null;
 
     if (!$stmt instanceof SQLite3Stmt) {
-        $stmt = $db->prepare('INSERT INTO clientes (
-                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, bairro, cidade, estado, cep, atualizado_em
+        $stmt = $db->prepare('INSERT OR REPLACE INTO clientes (
+                id, nome, tipo, numero_documento, celular, telefone, codigo, rua, numero, bairro, cidade, estado, cep, atualizado_em
             ) VALUES (
-                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :bairro, :cidade, :estado, :cep, :atualizado_em
-            )
-            ON CONFLICT(id) DO UPDATE SET
-                nome = excluded.nome,
-                tipo = excluded.tipo,
-                numero_documento = excluded.numero_documento,
-                celular = excluded.celular,
-                telefone = excluded.telefone,
-                codigo = excluded.codigo,
-                rua = excluded.rua,
-                bairro = excluded.bairro,
-                cidade = excluded.cidade,
-                estado = excluded.estado,
-                cep = excluded.cep,
-                atualizado_em = excluded.atualizado_em');
+                :id, :nome, :tipo, :numero_documento, :celular, :telefone, :codigo, :rua, :numero, :bairro, :cidade, :estado, :cep, :atualizado_em
+            )');
         if (!$stmt instanceof SQLite3Stmt) {
             $mensagemErro = trim($db->lastErrorMsg() ?: '');
             $stmt = null;
@@ -93,6 +112,7 @@ function upsertCliente(SQLite3 $db, array $cliente): void
     bindValorOuNulo($stmt, ':telefone', $dados['telefone']);
     bindValorOuNulo($stmt, ':codigo', $dados['codigo']);
     bindValorOuNulo($stmt, ':rua', $dados['rua']);
+    bindValorOuNulo($stmt, ':numero', $dados['numero']);
     bindValorOuNulo($stmt, ':bairro', $dados['bairro']);
     bindValorOuNulo($stmt, ':cidade', $dados['cidade']);
     bindValorOuNulo($stmt, ':estado', $dados['estado']);
@@ -151,27 +171,47 @@ function removerClientesForaDaLista(SQLite3 $db, array $idsAtuais): void
         return;
     }
 
-    $placeholders = implode(',', array_fill(0, count($idsNormalizados), '?'));
-    $stmt = $db->prepare("DELETE FROM clientes WHERE id NOT IN ($placeholders)");
+    $idsExistentes = [];
+    $resultado = $db->query('SELECT id FROM clientes');
+    if ($resultado instanceof SQLite3Result) {
+        while ($linha = $resultado->fetchArray(SQLITE3_ASSOC)) {
+            if (isset($linha['id'])) {
+                $idsExistentes[] = (string) $linha['id'];
+            }
+        }
+        $resultado->finalize();
+    }
+
+    if (empty($idsExistentes)) {
+        return;
+    }
+
+    $stmt = $db->prepare('DELETE FROM clientes WHERE id = :id');
     if (!$stmt instanceof SQLite3Stmt) {
         $mensagemErro = trim($db->lastErrorMsg() ?: '');
-        throw new RuntimeException('Não foi possível preparar a limpeza de clientes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
+        throw new RuntimeException('Não foi possível preparar a remoção de clientes ausentes' . ($mensagemErro !== '' ? ': ' . $mensagemErro : '.'));
     }
 
-    $indice = 1;
-    foreach (array_keys($idsNormalizados) as $id) {
-        $stmt->bindValue($indice, $id, SQLITE3_TEXT);
-        $indice++;
+    foreach ($idsExistentes as $id) {
+        if (isset($idsNormalizados[$id])) {
+            continue;
+        }
+
+        $stmt->reset();
+        if (method_exists($stmt, 'clear')) {
+            $stmt->clear();
+        }
+        $stmt->bindValue(':id', $id, SQLITE3_TEXT);
+        $resultado = $stmt->execute();
+        if ($resultado === false) {
+            $stmt->close();
+            throw new RuntimeException('Falha ao remover cliente ausente do banco local.');
+        }
+        if ($resultado instanceof SQLite3Result) {
+            $resultado->finalize();
+        }
     }
 
-    $resultado = $stmt->execute();
-    if ($resultado === false) {
-        $stmt->close();
-        throw new RuntimeException('Falha ao remover clientes ausentes da lista informada.');
-    }
-
-    $resultado->finalize();
-    $stmt->clear();
     $stmt->close();
 }
 
@@ -250,6 +290,7 @@ function normalizarDadosCliente(array $cliente): array
 
     $endereco = $cliente['endereco']['geral'] ?? ($cliente['endereco'] ?? []);
     $rua = isset($endereco['endereco']) ? trim((string) $endereco['endereco']) : null;
+    $numero = isset($endereco['numero']) ? trim((string) $endereco['numero']) : null;
     $bairro = isset($endereco['bairro']) ? trim((string) $endereco['bairro']) : null;
     $cidade = isset($endereco['municipio']) ? trim((string) $endereco['municipio']) : null;
     $estado = isset($endereco['uf']) ? strtoupper(trim((string) $endereco['uf'])) : null;
@@ -268,6 +309,7 @@ function normalizarDadosCliente(array $cliente): array
         'telefone' => $telefone,
         'codigo' => $codigo,
         'rua' => $rua,
+        'numero' => $numero,
         'bairro' => $bairro,
         'cidade' => $cidade,
         'estado' => $estado,
@@ -348,6 +390,11 @@ function normalizarClienteParaResposta(array $cliente): ?array
             $enderecoNormalizado['endereco'] = $rua;
         }
 
+        $numero = isset($enderecoFonte['numero']) ? trim((string) $enderecoFonte['numero']) : '';
+        if ($numero !== '') {
+            $enderecoNormalizado['numero'] = $numero;
+        }
+
         $bairro = isset($enderecoFonte['bairro']) ? trim((string) $enderecoFonte['bairro']) : '';
         if ($bairro !== '') {
             $enderecoNormalizado['bairro'] = $bairro;
@@ -421,6 +468,7 @@ function montarEstruturaCliente(array $linha): array
 
     $endereco = array_filter([
         'endereco' => $linha['rua'] ?? null,
+        'numero' => $linha['numero'] ?? null,
         'bairro' => $linha['bairro'] ?? null,
         'municipio' => $linha['cidade'] ?? null,
         'uf' => $linha['estado'] ?? null,
