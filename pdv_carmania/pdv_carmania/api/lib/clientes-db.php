@@ -48,7 +48,9 @@ function getClientesDb(): SQLite3
 
     $db->exec('CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome COLLATE NOCASE)');
 
-    garantirColunaClientes($db, 'numero', 'TEXT');
+    foreach (['rua', 'numero', 'bairro', 'cidade', 'estado', 'cep'] as $colunaEndereco) {
+        garantirColunaClientes($db, $colunaEndereco, 'TEXT');
+    }
 
     return $db;
 }
