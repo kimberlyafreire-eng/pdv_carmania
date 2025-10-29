@@ -104,6 +104,14 @@ function upsertCliente(SQLite3 $db, array $cliente): void
 
     $dados = normalizarDadosCliente($cliente);
 
+    if ($dados['id'] === null || $dados['id'] === '') {
+        throw new RuntimeException('ID do cliente ausente ao tentar gravar no banco local.');
+    }
+
+    if (!is_string($dados['nome']) || trim($dados['nome']) === '') {
+        throw new RuntimeException('Nome do cliente ausente ao tentar gravar no banco local.');
+    }
+
     bindValorOuNulo($stmt, ':id', $dados['id']);
     bindValorOuNulo($stmt, ':nome', $dados['nome']);
     bindValorOuNulo($stmt, ':tipo', $dados['tipo']);
@@ -141,7 +149,13 @@ function upsertClientes(SQLite3 $db, array $clientes): void
         try {
             upsertCliente($db, $cliente);
         } catch (Throwable $e) {
-            error_log('[clientes-db] Falha ao gravar cliente localmente: ' . $e->getMessage());
+            $contexto = [
+                'cliente_id' => $cliente['id'] ?? null,
+                'cliente_nome' => $cliente['nome'] ?? null,
+            ];
+            $jsonContexto = json_encode($contexto, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+            $sufixo = $jsonContexto !== false ? ' | contexto: ' . $jsonContexto : '';
+            error_log('[clientes-db] Falha ao gravar cliente localmente: ' . $e->getMessage() . $sufixo);
         }
     }
 }
@@ -267,8 +281,66 @@ function buscarClientesLocalmente(SQLite3 $db): array
  */
 function normalizarDadosCliente(array $cliente): array
 {
-    $id = isset($cliente['id']) ? (string) $cliente['id'] : null;
-    $nome = isset($cliente['nome']) ? trim((string) $cliente['nome']) : '';
+    $id = null;
+    if (isset($cliente['id'])) {
+        $idTrim = trim((string) $cliente['id']);
+        if ($idTrim !== '') {
+            $id = $idTrim;
+        }
+    }
+
+    $nome = '';
+    $possiveisNomes = [
+        $cliente['nome'] ?? null,
+        $cliente['razaoSocial'] ?? null,
+        $cliente['fantasia'] ?? null,
+        $cliente['nomeFantasia'] ?? null,
+        $cliente['apelido'] ?? null,
+    ];
+
+    foreach ($possiveisNomes as $valor) {
+        if (!is_string($valor)) {
+            continue;
+        }
+
+        $valor = trim($valor);
+        if ($valor !== '') {
+            $nome = $valor;
+            break;
+        }
+    }
+
+    $usouPlaceholderGenerico = false;
+    if ($nome === '' && $id !== null) {
+        $nome = 'Cliente ' . $id;
+    }
+
+    if ($nome === '') {
+        $nome = 'Cliente sem nome';
+        $usouPlaceholderGenerico = true;
+    }
+
+    if ($usouPlaceholderGenerico) {
+        $contexto = ['id' => $id];
+        $camposDisponiveis = [];
+        foreach (['nome', 'razaoSocial', 'fantasia', 'nomeFantasia', 'apelido'] as $campoNome) {
+            if (!empty($cliente[$campoNome])) {
+                $camposDisponiveis[$campoNome] = $cliente[$campoNome];
+            }
+        }
+
+        if (!empty($camposDisponiveis)) {
+            $contexto['campos_disponiveis'] = $camposDisponiveis;
+        }
+
+        $jsonContexto = json_encode($contexto, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($jsonContexto !== false) {
+            error_log('[clientes-db] Cliente recebido sem nome definido. Contexto: ' . $jsonContexto);
+        } else {
+            error_log('[clientes-db] Cliente recebido sem nome definido.');
+        }
+    }
+
     $tipo = null;
 
     if (!empty($cliente['tipo'])) {
