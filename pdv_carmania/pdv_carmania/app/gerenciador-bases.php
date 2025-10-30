@@ -32,6 +32,8 @@ ksort($dbFiles);
 $selectedDbKey = $_POST['db'] ?? $_GET['db'] ?? '';
 $selectedTable = $_POST['table'] ?? $_GET['table'] ?? '';
 $editRowId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
+$searchColumn = $_POST['search_column'] ?? $_GET['search_column'] ?? '';
+$searchValue = $_POST['search_value'] ?? $_GET['search_value'] ?? '';
 $limit = isset($_POST['limit']) ? (int) $_POST['limit'] : (isset($_GET['limit']) ? (int) $_GET['limit'] : 100);
 if ($limit <= 0 || $limit > 500) {
     $limit = 100;
@@ -200,9 +202,30 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
         $tables = listarTabelas($db);
         if ($selectedTable && in_array($selectedTable, $tables, true)) {
             $columns = obterColunas($db, $selectedTable);
+            $columnNames = array_column($columns, 'name');
+            if ($searchColumn && !in_array($searchColumn, $columnNames, true)) {
+                $searchColumn = '';
+            }
             $safeTable = '"' . str_replace('"', '""', $selectedTable) . '"';
-            $query = sprintf('SELECT rowid AS _rowid_, * FROM %s LIMIT %d OFFSET %d', $safeTable, $limit, $offset);
-            $result = $db->query($query);
+            $query = 'SELECT rowid AS _rowid_, * FROM ' . $safeTable;
+            $stmt = null;
+            $shouldBindSearch = $searchColumn !== '' && $searchValue !== '';
+            if ($shouldBindSearch) {
+                $safeColumn = '"' . str_replace('"', '""', $searchColumn) . '"';
+                $query .= ' WHERE ' . $safeColumn . ' LIKE :search';
+            }
+            $query .= sprintf(' LIMIT %d OFFSET %d', $limit, $offset);
+            $stmt = $db->prepare($query);
+            if ($stmt === false) {
+                throw new Exception('Não foi possível preparar a consulta.');
+            }
+            if ($shouldBindSearch) {
+                $stmt->bindValue(':search', '%' . $searchValue . '%', SQLITE3_TEXT);
+            }
+            $result = $stmt->execute();
+            if ($result === false) {
+                throw new Exception('Não foi possível executar a consulta.');
+            }
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 $rows[] = $row;
                 if ($editRowId > 0 && $row['_rowid_'] == $editRowId) {
@@ -283,6 +306,19 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                     <label class="form-label" for="offset-input">Offset</label>
                     <input type="number" min="0" id="offset-input" name="offset" class="form-control" value="<?= (int) $offset ?>">
                 </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="search-column">Coluna</label>
+                    <select id="search-column" name="search_column" class="form-select" <?= $selectedTable ? '' : 'disabled' ?>>
+                        <option value="">Todas</option>
+                        <?php foreach ($columns as $coluna): ?>
+                            <option value="<?= htmlspecialchars($coluna['name']) ?>" <?= $coluna['name'] === $searchColumn ? 'selected' : '' ?>><?= htmlspecialchars($coluna['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12 col-md-5">
+                    <label class="form-label" for="search-value">Valor da busca</label>
+                    <input type="text" id="search-value" name="search_value" class="form-control" value="<?= htmlspecialchars($searchValue) ?>" <?= $selectedTable ? '' : 'disabled' ?>>
+                </div>
                 <div class="col-12">
                     <button class="btn btn-primary" type="submit">Atualizar lista</button>
                 </div>
@@ -321,7 +357,7 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                                     <?php foreach ($rows as $linha): ?>
                                         <tr class="<?= ($editRowId > 0 && $linha['_rowid_'] == $editRowId) ? 'table-warning' : '' ?>">
                                             <td class="d-flex gap-2">
-                                                <a class="btn btn-sm btn-outline-primary" href="?db=<?= urlencode($selectedDbKey) ?>&table=<?= urlencode($selectedTable) ?>&limit=<?= (int) $limit ?>&offset=<?= (int) $offset ?>&edit=<?= (int) $linha['_rowid_'] ?>">Editar</a>
+                                                <a class="btn btn-sm btn-outline-primary" href="?db=<?= urlencode($selectedDbKey) ?>&table=<?= urlencode($selectedTable) ?>&limit=<?= (int) $limit ?>&offset=<?= (int) $offset ?>&search_column=<?= urlencode($searchColumn) ?>&search_value=<?= urlencode($searchValue) ?>&edit=<?= (int) $linha['_rowid_'] ?>">Editar</a>
                                                 <form method="post" class="d-inline" onsubmit="return confirm('Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.');">
                                                     <input type="hidden" name="action" value="delete">
                                                     <input type="hidden" name="db" value="<?= htmlspecialchars($selectedDbKey) ?>">
@@ -329,6 +365,8 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                                                     <input type="hidden" name="rowid" value="<?= (int) $linha['_rowid_'] ?>">
                                                     <input type="hidden" name="limit" value="<?= (int) $limit ?>">
                                                     <input type="hidden" name="offset" value="<?= (int) $offset ?>">
+                                                    <input type="hidden" name="search_column" value="<?= htmlspecialchars($searchColumn) ?>">
+                                                    <input type="hidden" name="search_value" value="<?= htmlspecialchars($searchValue) ?>">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
                                                 </form>
                                             </td>
@@ -358,6 +396,8 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                                 <input type="hidden" name="rowid" value="<?= (int) $editRowData['_rowid_'] ?>">
                                 <input type="hidden" name="limit" value="<?= (int) $limit ?>">
                                 <input type="hidden" name="offset" value="<?= (int) $offset ?>">
+                                <input type="hidden" name="search_column" value="<?= htmlspecialchars($searchColumn) ?>">
+                                <input type="hidden" name="search_value" value="<?= htmlspecialchars($searchValue) ?>">
                                 <?php foreach ($columns as $coluna): ?>
                                     <?php $nomeColuna = $coluna['name']; ?>
                                     <div class="mb-3">
@@ -371,7 +411,7 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                                 <?php endforeach; ?>
                                 <div class="d-flex gap-2">
                                     <button type="submit" class="btn btn-success">Salvar alterações</button>
-                                    <a href="?db=<?= urlencode($selectedDbKey) ?>&table=<?= urlencode($selectedTable) ?>&limit=<?= (int) $limit ?>&offset=<?= (int) $offset ?>" class="btn btn-outline-secondary">Cancelar</a>
+                                    <a href="?db=<?= urlencode($selectedDbKey) ?>&table=<?= urlencode($selectedTable) ?>&limit=<?= (int) $limit ?>&offset=<?= (int) $offset ?>&search_column=<?= urlencode($searchColumn) ?>&search_value=<?= urlencode($searchValue) ?>" class="btn btn-outline-secondary">Cancelar</a>
                                 </div>
                             </form>
                         <?php elseif ($selectedTable): ?>
