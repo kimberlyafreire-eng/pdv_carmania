@@ -485,6 +485,275 @@ if ($usuarioLogado) {
 
     atualizarClienteDestaque(clienteSelecionado);
 
+    const CLIENTES_CACHE_KEY = "clientesListaCache";
+
+    const documentoValido = (cliente) => {
+      if (!cliente) return false;
+      const bruto = String(cliente.numeroDocumento || cliente.documento || cliente.numero_documento || "").trim();
+      if (!bruto) return false;
+      const digitos = bruto.replace(/\D+/g, "");
+      return digitos.length === 11 || digitos.length === 14;
+    };
+
+    const obterEnderecoBase = (cliente) => {
+      if (!cliente || typeof cliente !== "object") return null;
+      const endereco = cliente.endereco;
+      if (endereco && typeof endereco === "object") {
+        if (endereco.geral && typeof endereco.geral === "object") {
+          return endereco.geral;
+        }
+        return endereco;
+      }
+      return null;
+    };
+
+    const possuiEnderecoMinimo = (cliente) => {
+      const base = obterEnderecoBase(cliente);
+      if (!base) return false;
+      const rua = String(base.endereco || base.rua || "").trim();
+      const municipio = String(base.municipio || base.cidade || "").trim();
+      const uf = String(base.uf || base.estado || "").trim().toUpperCase();
+      const cep = String(base.cep || "").replace(/\D+/g, "");
+      return rua !== "" && municipio !== "" && uf.length === 2 && cep.length === 8;
+    };
+
+    const formatarCep = (valor) => {
+      const digitos = String(valor || "").replace(/\D+/g, "");
+      if (digitos.length === 8) {
+        return `${digitos.slice(0, 5)}-${digitos.slice(5)}`;
+      }
+      return digitos;
+    };
+
+    const garantirEstruturaEndereco = (cliente) => {
+      if (!cliente || typeof cliente !== "object") return null;
+      if (!cliente.endereco || typeof cliente.endereco !== "object") {
+        cliente.endereco = {};
+      }
+      if (!cliente.endereco.geral || typeof cliente.endereco.geral !== "object") {
+        cliente.endereco.geral = {};
+      }
+      return cliente.endereco.geral;
+    };
+
+    const aplicarDocumentoSeDisponivel = (destino, origem) => {
+      if (!destino || documentoValido(destino) || !origem) return;
+      const candidatos = [
+        origem.numeroDocumento,
+        origem.documento,
+        origem.numero_documento,
+        origem.cpf,
+        origem.cnpj,
+      ];
+      for (const valorBruto of candidatos) {
+        if (typeof valorBruto !== "string") continue;
+        const valor = valorBruto.trim();
+        if (!valor) continue;
+        const digitos = valor.replace(/\D+/g, "");
+        if (digitos.length === 11 || digitos.length === 14) {
+          destino.numeroDocumento = valor;
+          if (!destino.documento) {
+            destino.documento = valor;
+          }
+          break;
+        }
+      }
+    };
+
+    const aplicarEnderecoSeDisponivel = (destino, origem) => {
+      if (!destino || !origem) return;
+      const destinoEndereco = garantirEstruturaEndereco(destino);
+      if (!destinoEndereco) return;
+
+      const baseOrigem = (() => {
+        const base = obterEnderecoBase(origem);
+        const copia = base ? { ...base } : {};
+        const map = [
+          ["endereco", ["endereco", "rua"]],
+          ["numero", ["numero"]],
+          ["bairro", ["bairro"]],
+          ["municipio", ["municipio", "cidade"]],
+          ["uf", ["uf", "estado"]],
+          ["cep", ["cep"]],
+        ];
+        for (const [dest, chaves] of map) {
+          if (copia[dest]) continue;
+          for (const chave of chaves) {
+            const valor = origem?.[chave];
+            if (typeof valor === "string" && valor.trim() !== "") {
+              copia[dest] = valor;
+              break;
+            }
+          }
+        }
+        return copia;
+      })();
+
+      const campos = {
+        endereco: baseOrigem.endereco || "",
+        numero: baseOrigem.numero || "",
+        bairro: baseOrigem.bairro || "",
+        municipio: baseOrigem.municipio || baseOrigem.cidade || "",
+        uf: baseOrigem.uf || baseOrigem.estado || "",
+        cep: baseOrigem.cep || "",
+      };
+
+      if (!destinoEndereco.endereco && campos.endereco) {
+        destinoEndereco.endereco = String(campos.endereco).trim();
+      }
+      if (!destinoEndereco.numero && campos.numero) {
+        destinoEndereco.numero = String(campos.numero).trim();
+      }
+      if (!destinoEndereco.bairro && campos.bairro) {
+        destinoEndereco.bairro = String(campos.bairro).trim();
+      }
+      if (!destinoEndereco.municipio && campos.municipio) {
+        destinoEndereco.municipio = String(campos.municipio).trim();
+      }
+      if (!destinoEndereco.uf && campos.uf) {
+        destinoEndereco.uf = String(campos.uf).trim().toUpperCase().slice(0, 2);
+      }
+      if (!destinoEndereco.cep && campos.cep) {
+        const cepFormatado = formatarCep(campos.cep);
+        if (cepFormatado) {
+          destinoEndereco.cep = cepFormatado;
+        }
+      }
+    };
+
+    const tentarCarregarClienteDoCache = (id) => {
+      if (!id) return null;
+      let cache = null;
+      try {
+        const bruto = localStorage.getItem(CLIENTES_CACHE_KEY);
+        if (!bruto) return null;
+        cache = JSON.parse(bruto);
+      } catch (erro) {
+        console.warn("Cache local de clientes inválido.", erro);
+        return null;
+      }
+      if (!cache || !Array.isArray(cache.lista)) return null;
+      const encontrado = cache.lista.find((cli) => String(cli.id) === String(id));
+      return encontrado ? JSON.parse(JSON.stringify(encontrado)) : null;
+    };
+
+    const atualizarCachesComCliente = (cliente) => {
+      if (!cliente || !cliente.id) return;
+      try {
+        localStorage.setItem("clienteSelecionado", JSON.stringify(cliente));
+      } catch (erro) {
+        console.warn("Não foi possível atualizar o cache do cliente selecionado.", erro);
+      }
+
+      try {
+        const brutoDados = localStorage.getItem("dadosVenda");
+        if (brutoDados) {
+          const dados = JSON.parse(brutoDados);
+          if (dados && dados.cliente && String(dados.cliente.id) === String(cliente.id)) {
+            dados.cliente = cliente;
+            localStorage.setItem("dadosVenda", JSON.stringify(dados));
+          }
+        }
+      } catch (erro) {
+        console.warn("Não foi possível sincronizar os dados da venda com o cliente atualizado.", erro);
+      }
+
+      try {
+        const brutoCache = localStorage.getItem(CLIENTES_CACHE_KEY);
+        if (!brutoCache) return;
+        const cache = JSON.parse(brutoCache);
+        if (!cache || !Array.isArray(cache.lista)) return;
+        const indice = cache.lista.findIndex((cli) => String(cli.id) === String(cliente.id));
+        if (indice >= 0) {
+          const copiaCliente = JSON.parse(JSON.stringify(cliente));
+          cache.lista[indice] = copiaCliente;
+          localStorage.setItem(CLIENTES_CACHE_KEY, JSON.stringify(cache));
+        }
+      } catch (erro) {
+        console.warn("Não foi possível atualizar o cache local de clientes.", erro);
+      }
+    };
+
+    async function garantirDadosCompletosClienteSelecionado() {
+      if (!clienteSelecionado?.id) return clienteSelecionado;
+
+      const snapshotAntes = JSON.stringify(clienteSelecionado);
+      let alterou = false;
+
+      if (!documentoValido(clienteSelecionado) || !possuiEnderecoMinimo(clienteSelecionado)) {
+        const clienteCache = tentarCarregarClienteDoCache(clienteSelecionado.id);
+        if (clienteCache) {
+          const tinhaDocumento = documentoValido(clienteSelecionado);
+          const tinhaEndereco = possuiEnderecoMinimo(clienteSelecionado);
+          aplicarDocumentoSeDisponivel(clienteSelecionado, clienteCache);
+          aplicarEnderecoSeDisponivel(clienteSelecionado, clienteCache);
+          if (!tinhaDocumento && documentoValido(clienteSelecionado)) {
+            alterou = true;
+          }
+          if (!tinhaEndereco && possuiEnderecoMinimo(clienteSelecionado)) {
+            alterou = true;
+          }
+        }
+      }
+
+      if (!documentoValido(clienteSelecionado) || !possuiEnderecoMinimo(clienteSelecionado)) {
+        try {
+          const resposta = await fetch(`../api/cliente-endereco.php?id=${encodeURIComponent(clienteSelecionado.id)}`, { cache: 'no-store' });
+          let json = null;
+          try {
+            json = await resposta.json();
+          } catch (erroJson) {
+            json = null;
+          }
+
+          if (resposta.ok && json) {
+            const tinhaDocumento = documentoValido(clienteSelecionado);
+            const tinhaEndereco = possuiEnderecoMinimo(clienteSelecionado);
+
+            if (json.contato) {
+              aplicarDocumentoSeDisponivel(clienteSelecionado, json.contato);
+              aplicarEnderecoSeDisponivel(clienteSelecionado, json.contato);
+            }
+
+            if (json.endereco) {
+              aplicarEnderecoSeDisponivel(clienteSelecionado, { endereco: { geral: json.endereco } });
+            }
+
+            if (!tinhaDocumento && documentoValido(clienteSelecionado)) {
+              alterou = true;
+            }
+            if (!tinhaEndereco && possuiEnderecoMinimo(clienteSelecionado)) {
+              alterou = true;
+            }
+          } else if (!resposta.ok) {
+            console.warn(`Não foi possível complementar dados do cliente (HTTP ${resposta.status}).`);
+          }
+        } catch (erro) {
+          console.warn('Falha ao complementar dados do cliente.', erro);
+        }
+      }
+
+      const snapshotDepois = JSON.stringify(clienteSelecionado);
+      if (snapshotAntes !== snapshotDepois) {
+        atualizarCachesComCliente(clienteSelecionado);
+        atualizarClienteDestaque(clienteSelecionado);
+      } else if (alterou) {
+        atualizarClienteDestaque(clienteSelecionado);
+      }
+
+      return clienteSelecionado;
+    }
+
+    let clienteCarregandoPromise = null;
+    if (clienteSelecionado?.id) {
+      try {
+        clienteCarregandoPromise = garantirDadosCompletosClienteSelecionado();
+      } catch (erro) {
+        console.warn('Não foi possível iniciar a complementação dos dados do cliente.', erro);
+        clienteCarregandoPromise = null;
+      }
+    }
+
     if (!totalVenda || totalVenda <= 0) {
       let bruto = carrinho.reduce((s, it) => s + (toNum(it.preco) * toNum(it.quantidade)), 0);
       totalVenda = descontoValor > 0 ? Math.max(0, bruto - descontoValor) :
@@ -690,6 +959,14 @@ if ($usuarioLogado) {
     }
 
     async function concluirVenda(){
+      if (clienteCarregandoPromise) {
+        try {
+          await clienteCarregandoPromise;
+        } catch (erro) {
+          console.warn('Falha ao garantir dados completos do cliente antes de concluir a venda.', erro);
+        }
+      }
+
       if (!clienteSelecionado?.id) return alert("Cliente não selecionado.");
       if (!carrinho.length) return alert("Carrinho vazio.");
 
