@@ -4,7 +4,28 @@ if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
+
 $usuarioLogado = $_SESSION['usuario'] ?? null;
+$estoquePadraoId = null;
+
+$dbFile = __DIR__ . '/../data/pdv_users.sqlite';
+if (is_string($usuarioLogado) && $usuarioLogado !== '' && file_exists($dbFile)) {
+    try {
+        $db = new SQLite3($dbFile);
+        $stmt = $db->prepare('SELECT estoque_padrao FROM usuarios WHERE LOWER(TRIM(usuario)) = LOWER(TRIM(?)) LIMIT 1');
+        $stmt->bindValue(1, $usuarioLogado, SQLITE3_TEXT);
+        $res = $stmt->execute();
+        $row = $res ? $res->fetchArray(SQLITE3_ASSOC) : null;
+        if ($row && isset($row['estoque_padrao'])) {
+            $valor = trim((string) $row['estoque_padrao']);
+            if ($valor !== '') {
+                $estoquePadraoId = $valor;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Erro ao buscar estoque_padrao: ' . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -101,6 +122,36 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 1.2rem;
+    }
+
+    .deposito-card {
+      margin-top: 1.8rem;
+      padding: 1.25rem 1.5rem;
+      border-radius: 14px;
+      border: 1px solid rgba(220, 53, 69, 0.18);
+      background: rgba(220, 53, 69, 0.04);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .deposito-infos .label {
+      display: block;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6c757d;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .deposito-infos .valor {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #b02a37;
+      word-break: break-word;
     }
 
     .valor-destaque {
@@ -361,6 +412,14 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
           <p class="lista-vazia" id="listaVazia">Nenhuma forma de pagamento adicionada até o momento.</p>
           <div class="status-pagamento mt-3" id="faltando">Faltando receber: R$ 0,00</div>
         </div>
+
+        <div class="deposito-card">
+          <div class="deposito-infos">
+            <span class="label">Depósito / Caixa</span>
+            <span class="valor" id="depositoSelecionadoLabel">Nenhum selecionado</span>
+          </div>
+          <button class="btn btn-outline-danger" type="button" onclick="abrirModalDeposito()">Selecionar depósito</button>
+        </div>
       </section>
 
       <section class="formas-wrapper">
@@ -381,6 +440,25 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
   </main>
 
   <div id="reciboContainer" class="container"></div>
+
+  <!-- Modal depósito -->
+  <div class="modal fade" id="modalDeposito" tabindex="-1" aria-labelledby="modalDepositoLabel" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalDepositoLabel">Selecionar depósito do caixa</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div id="listaDepositosCaixa" class="list-group"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger" onclick="confirmarDepositoSelecionado()">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal valor -->
   <div class="modal fade" id="modalValor" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
@@ -406,15 +484,21 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
     window.USUARIO_LOGADO = <?= json_encode($usuarioLogado) ?>;
+    window.ESTOQUE_PADRAO_ID = <?= json_encode($estoquePadraoId) ?>;
   </script>
   <script>
     const fmt = (n) => "R$ " + (Number(n)||0).toFixed(2);
     const toNum = (v) => parseFloat((v ?? 0)) || 0;
     const usuarioLogado = window.USUARIO_LOGADO || null;
+    const estoquePadraoUsuario = window.ESTOQUE_PADRAO_ID || null;
 
     const cliente = JSON.parse(localStorage.getItem("clienteRecebimento") || "null");
     const saldoData = JSON.parse(localStorage.getItem("saldoCrediario") || "null");
     const clienteNomeEl = document.getElementById("clienteSelecionadoNome");
+    const depositoLabelEl = document.getElementById("depositoSelecionadoLabel");
+    const modalDepositoEl = document.getElementById("modalDeposito");
+    const listaDepositosCaixaEl = document.getElementById("listaDepositosCaixa");
+    let cacheDepositosCaixa = [];
 
     const LEGACY_DEPOSITO_KEY = "depositoSelecionado";
     const depositoStorageKey = usuarioLogado ? `${LEGACY_DEPOSITO_KEY}:${usuarioLogado}` : LEGACY_DEPOSITO_KEY;
@@ -446,6 +530,145 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
       return null;
     }
 
+    function atualizarDepositoUi() {
+      if (!depositoLabelEl) return;
+      if (depositoSelecionado && depositoSelecionado.nome) {
+        depositoLabelEl.textContent = depositoSelecionado.nome;
+        depositoLabelEl.classList.remove("text-muted");
+      } else if (depositoSelecionado && depositoSelecionado.id) {
+        depositoLabelEl.textContent = `ID ${depositoSelecionado.id}`;
+        depositoLabelEl.classList.remove("text-muted");
+      } else {
+        depositoLabelEl.textContent = "Nenhum selecionado";
+        depositoLabelEl.classList.add("text-muted");
+      }
+    }
+
+    async function carregarDepositosCaixa() {
+      if (Array.isArray(cacheDepositosCaixa) && cacheDepositosCaixa.length) {
+        return cacheDepositosCaixa;
+      }
+
+      const resposta = await fetch("../api/depositos.php?nocache=" + Date.now());
+      if (!resposta.ok) {
+        throw new Error(`Erro ao consultar depósitos (HTTP ${resposta.status})`);
+      }
+      const json = await resposta.json();
+      const lista = (json && Array.isArray(json.data)) ? json.data : [];
+      cacheDepositosCaixa = lista;
+      return lista;
+    }
+
+    async function abrirModalDeposito() {
+      if (!modalDepositoEl || !listaDepositosCaixaEl) return;
+
+      const modal = bootstrap.Modal.getOrCreateInstance(modalDepositoEl);
+      modal.show();
+      listaDepositosCaixaEl.innerHTML = "<div class='text-center text-muted py-3'>Carregando depósitos...</div>";
+
+      try {
+        const depositos = await carregarDepositosCaixa();
+        listaDepositosCaixaEl.innerHTML = "";
+
+        if (!depositos.length) {
+          listaDepositosCaixaEl.innerHTML = "<div class='alert alert-warning mb-0'>Nenhum depósito encontrado.</div>";
+          return;
+        }
+
+        depositos.forEach(dep => {
+          if (!dep || typeof dep !== "object") return;
+          const id = String(dep.id ?? '').trim();
+          if (!id) return;
+          const nome = typeof dep.descricao === "string" && dep.descricao.trim()
+            ? dep.descricao.trim()
+            : `Depósito ${id}`;
+
+          const item = document.createElement("label");
+          item.className = "list-group-item d-flex align-items-center";
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = "depositoSelecionado";
+          input.value = id;
+          input.className = "form-check-input me-2";
+          input.dataset.nome = nome;
+          if (depositoSelecionado && String(depositoSelecionado.id) === id) {
+            input.checked = true;
+          }
+
+          const span = document.createElement("span");
+          span.className = "w-100";
+          span.textContent = nome;
+
+          item.appendChild(input);
+          item.appendChild(span);
+          listaDepositosCaixaEl.appendChild(item);
+        });
+
+        if (!listaDepositosCaixaEl.children.length) {
+          listaDepositosCaixaEl.innerHTML = "<div class='alert alert-warning mb-0'>Nenhum depósito encontrado.</div>";
+        }
+      } catch (err) {
+        console.error("Erro ao carregar depósitos do caixa:", err);
+        listaDepositosCaixaEl.innerHTML = "<div class='alert alert-danger mb-0'>Erro ao carregar depósitos.</div>";
+      }
+    }
+
+    function confirmarDepositoSelecionado() {
+      if (!modalDepositoEl) return;
+      const selecionado = modalDepositoEl.querySelector("input[name='depositoSelecionado']:checked");
+      if (!selecionado) {
+        alert("Selecione um depósito antes de confirmar.");
+        return;
+      }
+
+      const nome = selecionado.dataset.nome && selecionado.dataset.nome.trim()
+        ? selecionado.dataset.nome.trim()
+        : (selecionado.parentElement?.querySelector("span")?.textContent?.trim() || selecionado.value);
+
+      depositoSelecionado = {
+        id: String(selecionado.value),
+        nome,
+      };
+      localStorage.setItem(depositoStorageKey, JSON.stringify(depositoSelecionado));
+      atualizarDepositoUi();
+
+      const modal = bootstrap.Modal.getInstance(modalDepositoEl);
+      if (modal) modal.hide();
+    }
+
+    async function aplicarDepositoPadraoSeNecessario() {
+      atualizarDepositoUi();
+
+      const idSelecionado = depositoSelecionado?.id ? String(depositoSelecionado.id) : null;
+      const precisaBuscarNomeSelecionado = Boolean(idSelecionado) && (!depositoSelecionado?.nome || !depositoSelecionado.nome.trim());
+      const precisaAplicarPadrao = !idSelecionado && estoquePadraoUsuario;
+
+      if (!precisaBuscarNomeSelecionado && !precisaAplicarPadrao) {
+        return;
+      }
+
+      const idParaBuscar = precisaBuscarNomeSelecionado
+        ? idSelecionado
+        : String(estoquePadraoUsuario);
+
+      try {
+        const depositos = await carregarDepositosCaixa();
+        const encontrado = depositos.find(dep => String(dep?.id ?? '') === String(idParaBuscar));
+        if (encontrado) {
+          const nome = typeof encontrado.descricao === "string" && encontrado.descricao.trim()
+            ? encontrado.descricao.trim()
+            : `Depósito ${encontrado.id}`;
+          depositoSelecionado = { id: String(encontrado.id), nome };
+          localStorage.setItem(depositoStorageKey, JSON.stringify(depositoSelecionado));
+        }
+      } catch (err) {
+        console.warn("Não foi possível determinar automaticamente o depósito para o caixa.", err);
+      } finally {
+        atualizarDepositoUi();
+      }
+    }
+
     let depositoSelecionado = recuperarDeposito(depositoStorageKey);
     if (!depositoSelecionado && depositoStorageKey !== LEGACY_DEPOSITO_KEY) {
       depositoSelecionado = recuperarDeposito(LEGACY_DEPOSITO_KEY);
@@ -453,6 +676,9 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
         localStorage.removeItem(LEGACY_DEPOSITO_KEY);
       }
     }
+
+    atualizarDepositoUi();
+    aplicarDepositoPadraoSeNecessario();
 
     if (!cliente || !saldoData) {
       alert("Informações do cliente não encontradas. Retornando...");
@@ -565,6 +791,10 @@ $usuarioLogado = $_SESSION['usuario'] ?? null;
     async function concluirPagamento() {
       if (!cliente?.id) return alert("Cliente inválido.");
       if (!pagamentos.length) return alert("Adicione pelo menos uma forma de pagamento.");
+      if (!depositoSelecionado || !depositoSelecionado.id) {
+        alert("Selecione o depósito/caixa que receberá o valor em dinheiro antes de concluir.");
+        return;
+      }
 
       btnConcluirEl.disabled = true;
       mostrarProcessandoRecibo();
