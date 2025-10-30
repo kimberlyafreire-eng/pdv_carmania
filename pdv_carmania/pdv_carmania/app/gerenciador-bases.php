@@ -32,16 +32,55 @@ ksort($dbFiles);
 $selectedDbKey = $_POST['db'] ?? $_GET['db'] ?? '';
 $selectedTable = $_POST['table'] ?? $_GET['table'] ?? '';
 $editRowId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
-$limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
+$limit = isset($_POST['limit']) ? (int) $_POST['limit'] : (isset($_GET['limit']) ? (int) $_GET['limit'] : 100);
 if ($limit <= 0 || $limit > 500) {
     $limit = 100;
 }
-$offset = isset($_GET['offset']) ? (int) $_GET['offset'] : 0;
+$offset = isset($_POST['offset']) ? (int) $_POST['offset'] : (isset($_GET['offset']) ? (int) $_GET['offset'] : 0);
 if ($offset < 0) {
     $offset = 0;
 }
 
 $message = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+    if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
+        $dbPath = $dbFiles[$selectedDbKey];
+        try {
+            $db = new SQLite3($dbPath);
+            $db->exec('PRAGMA foreign_keys = ON');
+            $tabelasDisponiveis = listarTabelas($db);
+            if (!in_array($selectedTable, $tabelasDisponiveis, true)) {
+                $message = ['type' => 'danger', 'text' => 'Tabela selecionada inválida.'];
+            } else {
+                $rowId = isset($_POST['rowid']) ? (int) $_POST['rowid'] : 0;
+                if ($rowId <= 0) {
+                    $message = ['type' => 'danger', 'text' => 'Identificador de registro inválido.'];
+                } else {
+                    $sql = 'DELETE FROM "' . str_replace('"', '""', $selectedTable) . '" WHERE rowid = :rowid';
+                    $stmt = $db->prepare($sql);
+                    $stmt->bindValue(':rowid', $rowId, SQLITE3_INTEGER);
+                    $resultado = $stmt->execute();
+                    if ($resultado === false) {
+                        $message = ['type' => 'danger', 'text' => 'Não foi possível excluir o registro.'];
+                    } else {
+                        if ($resultado instanceof SQLite3Result) {
+                            $resultado->finalize();
+                        }
+                        $message = ['type' => 'success', 'text' => 'Registro excluído com sucesso.'];
+                        if ($editRowId === $rowId) {
+                            $editRowId = 0;
+                        }
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            $message = ['type' => 'danger', 'text' => 'Erro ao acessar o banco de dados: ' . htmlspecialchars($e->getMessage())];
+        }
+    } else {
+        $message = ['type' => 'danger', 'text' => 'Banco de dados selecionado inválido.'];
+    }
+}
 
 function listarTabelas(SQLite3 $db): array
 {
@@ -281,8 +320,17 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                                 <?php else: ?>
                                     <?php foreach ($rows as $linha): ?>
                                         <tr class="<?= ($editRowId > 0 && $linha['_rowid_'] == $editRowId) ? 'table-warning' : '' ?>">
-                                            <td>
+                                            <td class="d-flex gap-2">
                                                 <a class="btn btn-sm btn-outline-primary" href="?db=<?= urlencode($selectedDbKey) ?>&table=<?= urlencode($selectedTable) ?>&limit=<?= (int) $limit ?>&offset=<?= (int) $offset ?>&edit=<?= (int) $linha['_rowid_'] ?>">Editar</a>
+                                                <form method="post" class="d-inline" onsubmit="return confirm('Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.');">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="db" value="<?= htmlspecialchars($selectedDbKey) ?>">
+                                                    <input type="hidden" name="table" value="<?= htmlspecialchars($selectedTable) ?>">
+                                                    <input type="hidden" name="rowid" value="<?= (int) $linha['_rowid_'] ?>">
+                                                    <input type="hidden" name="limit" value="<?= (int) $limit ?>">
+                                                    <input type="hidden" name="offset" value="<?= (int) $offset ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
+                                                </form>
                                             </td>
                                             <?php foreach ($columns as $coluna): ?>
                                                 <?php $nomeColuna = $coluna['name']; ?>
@@ -308,6 +356,8 @@ if ($selectedDbKey && isset($dbFiles[$selectedDbKey])) {
                                 <input type="hidden" name="db" value="<?= htmlspecialchars($selectedDbKey) ?>">
                                 <input type="hidden" name="table" value="<?= htmlspecialchars($selectedTable) ?>">
                                 <input type="hidden" name="rowid" value="<?= (int) $editRowData['_rowid_'] ?>">
+                                <input type="hidden" name="limit" value="<?= (int) $limit ?>">
+                                <input type="hidden" name="offset" value="<?= (int) $offset ?>">
                                 <?php foreach ($columns as $coluna): ?>
                                     <?php $nomeColuna = $coluna['name']; ?>
                                     <div class="mb-3">
