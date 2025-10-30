@@ -578,9 +578,20 @@ if (!isset($_SESSION['usuario'])) {
                 Transmitir venda
               </button>`);
         }
+        const situacaoCancelada = Number(venda.situacao_id) === 12;
+        const podeCancelar = transmitido && !situacaoCancelada;
+        const rotuloCancelar = situacaoCancelada ? 'Cancelada' : 'Cancelar venda';
+        const tituloCancelar = situacaoCancelada
+          ? 'Venda já cancelada'
+          : (podeCancelar ? 'Cancelar venda' : 'Cancelar venda disponível após transmissão');
+        const classesCancelar = ['btn', 'btn-outline-danger', 'btn-sm', 'cancelar-venda-btn'];
+        if (!podeCancelar) {
+          classesCancelar.push('disabled');
+        }
+        const atributoDesabilitado = podeCancelar ? '' : ' disabled';
         botoes.push(`
-              <button type="button" class="btn btn-outline-danger btn-sm cancelar-venda-btn" title="Cancelar venda">
-                Cancelar venda
+              <button type="button" class="${classesCancelar.join(' ')}"${atributoDesabilitado} title="${tituloCancelar}">
+                ${rotuloCancelar}
               </button>`);
 
         tr.innerHTML = `
@@ -631,11 +642,10 @@ if (!isset($_SESSION['usuario'])) {
         }
 
         const btnCancelar = tr.querySelector('.cancelar-venda-btn');
-        if (btnCancelar) {
-          btnCancelar.addEventListener('click', (event) => {
+        if (btnCancelar && !btnCancelar.classList.contains('disabled')) {
+          btnCancelar.addEventListener('click', async (event) => {
             event.stopPropagation();
-            exibirMensagem('warning', 'Ação de cancelar venda ainda não implementada.');
-            setTimeout(limparMensagem, 3000);
+            await cancelarVenda(venda.id, btnCancelar);
           });
         }
 
@@ -879,6 +889,56 @@ if (!isset($_SESSION['usuario'])) {
         if (botao) {
           botao.disabled = false;
           botao.innerHTML = labelOriginal || 'Transmitir venda';
+        }
+      }
+    }
+
+    async function cancelarVenda(id, botao) {
+      if (!id) return;
+      limparMensagem();
+      let labelOriginal = '';
+      if (botao) {
+        labelOriginal = botao.innerHTML;
+        botao.disabled = true;
+        botao.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Cancelando...';
+      }
+
+      try {
+        const resposta = await fetchComBackoff('../api/venda-cancelar.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+          tentativas: 4,
+          atrasoInicialMs: 700,
+        });
+
+        let json = null;
+        try {
+          json = await resposta.json();
+        } catch (erroJson) {
+          console.error('Falha ao interpretar resposta do cancelamento:', erroJson);
+        }
+
+        if (!resposta.ok || !json || json.ok !== true) {
+          const mensagemErro = json?.erro || `Não foi possível cancelar a venda, solicite o cancelamento pelo Bling.`;
+          throw new Error(mensagemErro);
+        }
+
+        const mensagem = json.mensagem || 'Venda cancelada com sucesso.';
+        exibirMensagem('success', mensagem);
+        setTimeout(limparMensagem, 4000);
+        await carregarVendas();
+      } catch (erro) {
+        if (erro?.name === 'AbortError') {
+          return;
+        }
+        console.error(erro);
+        const mensagem = erro?.message || 'Não foi possível cancelar a venda, solicite o cancelamento pelo Bling.';
+        exibirMensagem('danger', mensagem);
+      } finally {
+        if (botao) {
+          botao.disabled = false;
+          botao.innerHTML = labelOriginal || 'Cancelar venda';
         }
       }
     }
