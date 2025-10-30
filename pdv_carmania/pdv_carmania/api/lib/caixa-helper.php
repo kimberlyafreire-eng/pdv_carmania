@@ -245,6 +245,11 @@ function validarOperacaoStatus(string $statusAtual, string $tipoSlug): array
                 'permitido' => $statusAtual === 'Aberto',
                 'novo_status' => $statusAtual,
             ];
+        case 'rcbto-crediario':
+            return [
+                'permitido' => true,
+                'novo_status' => $statusAtual,
+            ];
         default:
             return [
                 'permitido' => false,
