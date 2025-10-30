@@ -187,7 +187,12 @@ if (!isset($_SESSION['usuario'])) {
             <input type="text" class="form-control" id="cep" name="cep" maxlength="10" placeholder="00000-000" />
           </div>
 
-          <div class="col-12 col-md-4 align-self-end">
+          <div class="col-12 col-md d-flex flex-column flex-md-row gap-2" id="obterEnderecoContainer">
+            <button type="button" id="btnObterEndereco" class="btn btn-outline-secondary btn-lg flex-fill d-none">
+              Obter endereço
+            </button>
+          </div>
+          <div class="col-12 col-md-auto align-self-end">
             <button type="submit" class="btn btn-danger w-100 btn-lg">Salvar Cliente</button>
           </div>
         </form>
@@ -204,6 +209,8 @@ if (!isset($_SESSION['usuario'])) {
     const btnRecarregar = document.getElementById('btnRecarregar');
     const btnSincronizar = document.getElementById('btnSincronizar');
     const btnSaldoNegativo = document.getElementById('btnSaldoNegativo');
+    const btnObterEndereco = document.getElementById('btnObterEndereco');
+    const obterEnderecoContainer = document.getElementById('obterEnderecoContainer');
     const btnVoltarLista = document.getElementById('btnVoltarLista');
 
     function removerAcentos(texto) {
@@ -522,6 +529,7 @@ if (!isset($_SESSION['usuario'])) {
       cepInput.value = endereco.cep || '';
 
       mostrarFormulario('editar');
+      atualizarBotaoObterEndereco();
     }
 
     function limparFormulario() {
@@ -532,6 +540,7 @@ if (!isset($_SESSION['usuario'])) {
       tipoPessoaSelect.setCustomValidity('');
       documentoInput.value = '';
       formCliente.classList.remove('was-validated');
+      atualizarBotaoObterEndereco();
     }
 
     function mostrarFormulario(modo) {
@@ -544,6 +553,7 @@ if (!isset($_SESSION['usuario'])) {
       setTimeout(() => {
         nomeInput.focus();
       }, 50);
+      atualizarBotaoObterEndereco();
     }
 
     function mostrarLista() {
@@ -555,6 +565,112 @@ if (!isset($_SESSION['usuario'])) {
       setTimeout(() => {
         buscaClienteInput.focus();
       }, 50);
+      atualizarBotaoObterEndereco();
+    }
+
+    function atualizarBotaoObterEndereco() {
+      if (!btnObterEndereco) {
+        return;
+      }
+
+      const possuiIdValido = clienteSelecionado
+        && clienteSelecionado.id !== undefined
+        && clienteSelecionado.id !== null
+        && String(clienteSelecionado.id).trim() !== '';
+
+      if (modoFormulario === 'editar' && possuiIdValido) {
+        btnObterEndereco.classList.remove('d-none');
+        btnObterEndereco.disabled = false;
+        if (obterEnderecoContainer) {
+          obterEnderecoContainer.classList.remove('d-none');
+        }
+      } else {
+        btnObterEndereco.classList.add('d-none');
+        btnObterEndereco.disabled = true;
+        if (obterEnderecoContainer) {
+          obterEnderecoContainer.classList.add('d-none');
+        }
+      }
+    }
+
+    async function obterEnderecoClienteSelecionado() {
+      if (!btnObterEndereco) {
+        return;
+      }
+
+      if (!clienteSelecionado || !clienteSelecionado.id) {
+        setMensagem('warning', 'Selecione um cliente válido antes de obter o endereço.');
+        return;
+      }
+
+      const textoOriginal = btnObterEndereco.innerHTML;
+      btnObterEndereco.disabled = true;
+      btnObterEndereco.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Obtendo...';
+
+      try {
+        const resposta = await fetch(`../api/cliente-endereco.php?id=${encodeURIComponent(clienteSelecionado.id)}`, { cache: 'no-store' });
+        let json = null;
+        try {
+          json = await resposta.json();
+        } catch (erroJson) {
+          json = null;
+        }
+
+        if (!resposta.ok || !json) {
+          const mensagemErro = json?.erro || `Não foi possível obter o endereço (HTTP ${resposta.status}).`;
+          throw new Error(mensagemErro);
+        }
+
+        if (!json.sucesso) {
+          throw new Error(json.erro || 'Não foi possível obter o endereço no momento.');
+        }
+
+        const endereco = json.endereco || {};
+        const rua = endereco.endereco || endereco.rua || '';
+        const numero = endereco.numero || '';
+        const bairro = endereco.bairro || '';
+        const cidade = endereco.cidade || endereco.municipio || '';
+        const estado = (endereco.estado || endereco.uf || '').toUpperCase();
+        const cep = endereco.cep || '';
+
+        enderecoInput.value = rua;
+        numeroInput.value = numero;
+        bairroInput.value = bairro;
+        cidadeInput.value = cidade;
+        estadoInput.value = estado;
+        cepInput.value = cep;
+
+        if (!clienteSelecionado.endereco || typeof clienteSelecionado.endereco !== 'object') {
+          clienteSelecionado.endereco = {};
+        }
+        clienteSelecionado.endereco.geral = {
+          endereco: rua,
+          numero,
+          bairro,
+          municipio: cidade,
+          uf: estado,
+          cep,
+        };
+
+        const chaveCliente = obterChaveCliente(clienteSelecionado.id);
+        const indiceLocal = clientes.findIndex(c => obterChaveCliente(c.id) === chaveCliente);
+        if (indiceLocal >= 0) {
+          const clienteAtualizado = { ...clientes[indiceLocal] };
+          clienteAtualizado.endereco = { geral: { ...clienteSelecionado.endereco.geral } };
+          clientes[indiceLocal] = clienteAtualizado;
+        }
+
+        if (json.temEndereco === false) {
+          setMensagem('warning', json.mensagem || 'O contato não possui endereço cadastrado no Bling.');
+        } else {
+          setMensagem('success', json.mensagem || 'Endereço obtido do Bling e aplicado no formulário.');
+        }
+      } catch (erro) {
+        setMensagem('danger', erro.message || 'Não foi possível obter o endereço do Bling.');
+      } finally {
+        btnObterEndereco.disabled = false;
+        btnObterEndereco.innerHTML = textoOriginal;
+      }
     }
 
     function criarItemLista(cliente) {
@@ -825,6 +941,12 @@ if (!isset($_SESSION['usuario'])) {
       });
     }
 
+    if (btnObterEndereco) {
+      btnObterEndereco.addEventListener('click', () => {
+        obterEnderecoClienteSelecionado();
+      });
+    }
+
     btnSaldoNegativo.addEventListener('click', () => {
       if (!HABILITAR_SALDOS) {
         return;
@@ -925,6 +1047,7 @@ if (!isset($_SESSION['usuario'])) {
       }
     });
 
+    atualizarBotaoObterEndereco();
     carregarTiposContato();
     carregarClientes();
     setMensagem('primary', 'Busque um cliente para editar ou clique em "Novo Cliente".');
