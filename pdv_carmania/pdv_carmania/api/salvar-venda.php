@@ -85,6 +85,11 @@ if ($vendedorId === '' || $vendedorId === null) {
 logMsg('🧑‍💼 Vendedor associado: ' . ($vendedorId ?? 'nenhum'));
 logMsg('👤 Atendente: ' . ($usuarioRecibo ?? 'não informado'));
 
+$caracteresEspeciaisNome = identificarCaracteresEspeciaisNome($clienteNome);
+if (!empty($caracteresEspeciaisNome)) {
+    logMsg("ℹ️ Nome do cliente contém caracteres especiais monitorados: " . implode(', ', $caracteresEspeciaisNome));
+}
+
 if (empty($carrinho) || !$clienteId) {
     logMsg("Carrinho ou cliente ausente: " . json_encode($input));
     echo json_encode(['ok'=>false,'erro'=>'Carrinho ou cliente ausente']);
@@ -254,6 +259,34 @@ function pagamentoEhBoleto(array $pagamento): bool
     }
 
     return false;
+}
+
+function identificarCaracteresEspeciaisNome(string $nome): array
+{
+    $nome = trim($nome);
+    if ($nome === '') {
+        return [];
+    }
+
+    $mapaCaracteres = [
+        "'" => "apóstrofo (')",
+        '"' => 'aspas duplas (")',
+        '(' => 'abre parênteses',
+        ')' => 'fecha parênteses',
+    ];
+
+    $encontrados = [];
+    foreach ($mapaCaracteres as $caractere => $descricao) {
+        if (mb_strpos($nome, $caractere) !== false) {
+            $encontrados[] = $descricao;
+        }
+    }
+
+    if (preg_match('/[\x00-\x1F\x7F]/u', $nome)) {
+        $encontrados[] = 'caracteres de controle ASCII';
+    }
+
+    return $encontrados;
 }
 
 function ajustarNomeComSobrenome(string $nome): array
@@ -745,6 +778,61 @@ if ($isCrediario && $clienteId) {
     }
 }
 
+$persistirVendaLocalParaRetransmissao = function (string $contextoLog) use (
+    $clienteId,
+    $clienteNome,
+    $usuarioSessao,
+    $usuarioPayload,
+    $usuarioRecibo,
+    $input,
+    $vendedorId,
+    $depositoNome,
+    $saldoCrediarioAnterior,
+    $isCrediario,
+    $valorCrediarioGerado,
+    $pagamentos,
+    $carrinho,
+    $totalFinal,
+    $descontoAplicado
+) {
+    $idVendaLocal = -1 * (int) round(microtime(true) * 1000);
+    $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
+    $depositoIdLocal = $input['deposito']['id'] ?? $input['depositoId'] ?? null;
+
+    $saldoCrediarioAnteriorPersistir = $saldoCrediarioAnterior !== null
+        ? round((float) $saldoCrediarioAnterior, 2)
+        : null;
+    $valorCrediarioPersistir = ($isCrediario && $valorCrediarioGerado > 0)
+        ? round((float) $valorCrediarioGerado, 2)
+        : null;
+
+    try {
+        registrarVendaLocal([
+            'id' => $idVendaLocal,
+            'data_hora' => date('Y-m-d H:i:s'),
+            'contato_id' => $clienteId ? (int) $clienteId : null,
+            'contato_nome' => $clienteNome,
+            'usuario_login' => $usuarioResponsavel,
+            'usuario_nome' => $usuarioRecibo,
+            'usuario_id' => $vendedorId,
+            'deposito_id' => $depositoIdLocal ? (int) $depositoIdLocal : null,
+            'deposito_nome' => $depositoNome,
+            'situacao_id' => 21,
+            'valor_total' => $totalFinal,
+            'valor_desconto' => $descontoAplicado,
+            'saldo_crediario_anterior' => $saldoCrediarioAnteriorPersistir,
+            'saldo_crediario_novo' => null,
+            'valor_crediario_venda' => $valorCrediarioPersistir,
+            'transmitido' => 0,
+        ], $pagamentos, $carrinho);
+        logMsg("💾 Venda salva localmente com ID provisório {$idVendaLocal} {$contextoLog}.");
+        return $idVendaLocal;
+    } catch (Throwable $e) {
+        logMsg('❌ Falha ao registrar venda local ' . $contextoLog . ': ' . $e->getMessage());
+        return null;
+    }
+};
+
 // 🧱 Payload principal do pedido
 $pedidoPayload = [
     'data'        => date('Y-m-d'),
@@ -772,43 +860,26 @@ if ($descontoAplicado > 0) {
 $res = bling_request('POST', 'pedidos/vendas', $pedidoPayload);
 if ($res['http'] === 429) {
     $mensagemErro = extrairMensagemErroResposta($res['body']) ?? 'Limite de requisições atingido. Tente novamente mais tarde.';
-    $idVendaLocal = -1 * (int) round(microtime(true) * 1000);
-    $usuarioResponsavel = $usuarioSessao !== '' ? $usuarioSessao : $usuarioPayload;
-    $depositoIdLocal = $input['deposito']['id'] ?? $input['depositoId'] ?? null;
-
-    $saldoCrediarioAnteriorPersistir = $saldoCrediarioAnterior !== null ? round((float) $saldoCrediarioAnterior, 2) : null;
-    $valorCrediarioPersistir = ($isCrediario && $valorCrediarioGerado > 0)
-        ? round((float) $valorCrediarioGerado, 2)
-        : null;
-
-    try {
-        registrarVendaLocal([
-            'id' => $idVendaLocal,
-            'data_hora' => date('Y-m-d H:i:s'),
-            'contato_id' => $clienteId ? (int) $clienteId : null,
-            'contato_nome' => $clienteNome,
-            'usuario_login' => $usuarioResponsavel,
-            'usuario_nome' => $usuarioRecibo,
-            'usuario_id' => $vendedorId,
-            'deposito_id' => $depositoIdLocal ? (int) $depositoIdLocal : null,
-            'deposito_nome' => $depositoNome,
-            'situacao_id' => 21,
-            'valor_total' => $totalFinal,
-            'valor_desconto' => $descontoAplicado,
-            'saldo_crediario_anterior' => $saldoCrediarioAnteriorPersistir,
-            'saldo_crediario_novo' => null,
-            'valor_crediario_venda' => $valorCrediarioPersistir,
-            'transmitido' => 0,
-        ], $pagamentos, $carrinho);
-        logMsg("💾 Venda salva localmente com ID provisório {$idVendaLocal} após erro 429.");
-    } catch (Throwable $e) {
-        logMsg('❌ Falha ao registrar venda local após erro 429: ' . $e->getMessage());
-    }
+    $idVendaLocal = $persistirVendaLocalParaRetransmissao('após erro 429');
 
     echo json_encode([
         'ok' => true,
         'transmitido' => false,
         'mensagem' => 'Venda salva localmente. O recibo ficará disponível após a transmissão ao Bling.',
+        'detalhe' => $mensagemErro,
+        'vendaId' => $idVendaLocal,
+    ]);
+    exit;
+}
+
+if ($res['http'] >= 500 && $res['http'] < 600) {
+    $mensagemErro = extrairMensagemErroResposta($res['body']) ?? 'O Bling retornou um erro interno ao tentar criar o pedido.';
+    $idVendaLocal = $persistirVendaLocalParaRetransmissao('após erro ' . $res['http']);
+
+    echo json_encode([
+        'ok' => true,
+        'transmitido' => false,
+        'mensagem' => 'Venda salva localmente. Tente retransmitir pelo histórico quando o Bling normalizar.',
         'detalhe' => $mensagemErro,
         'vendaId' => $idVendaLocal,
     ]);
