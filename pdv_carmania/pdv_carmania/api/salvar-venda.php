@@ -307,14 +307,64 @@ function limparCamposNulos(array $dados): array
     return $resultado;
 }
 
-function obterContatoParaNfe(int $clienteId, string $clienteNome): array
+function normalizarEstruturaEndereco(array $dados): array
 {
-    [$nomeFallback, $fallbackAjustado] = ajustarNomeComSobrenome($clienteNome);
+    $endereco = [
+        'endereco' => $dados['endereco'] ?? ($dados['logradouro'] ?? null),
+        'numero' => $dados['numero'] ?? null,
+        'complemento' => $dados['complemento'] ?? null,
+        'bairro' => $dados['bairro'] ?? null,
+        'cep' => $dados['cep'] ?? null,
+        'municipio' => $dados['municipio'] ?? ($dados['cidade'] ?? null),
+        'uf' => $dados['uf'] ?? ($dados['estado'] ?? null),
+        'pais' => $dados['pais'] ?? ($dados['nomePais'] ?? null),
+    ];
+
+    return limparCamposNulos($endereco);
+}
+
+function obterContatoParaNfe(int $clienteId, string $clienteNome, array $fallbackDados = []): array
+{
+    $nomeBase = isset($fallbackDados['nome']) ? (string) $fallbackDados['nome'] : $clienteNome;
+
+    [$nomeFallback, $fallbackAjustado] = ajustarNomeComSobrenome($nomeBase);
     if ($fallbackAjustado) {
         logMsg('ℹ️ Nome do cliente informado sem sobrenome. Ajuste automático aplicado para emissão da NF.');
     }
 
-    $fallback = ['id' => $clienteId, 'nome' => $nomeFallback];
+    $fallback = limparCamposNulos([
+        'id' => $fallbackDados['id'] ?? $clienteId,
+        'nome' => $nomeFallback,
+        'tipoPessoa' => $fallbackDados['tipoPessoa'] ?? ($fallbackDados['tipo'] ?? null),
+        'numeroDocumento' => $fallbackDados['numeroDocumento'] ?? ($fallbackDados['numeroDocumentoPrincipal'] ?? ($fallbackDados['cpfCnpj'] ?? null)),
+        'ie' => $fallbackDados['ie'] ?? null,
+        'rg' => $fallbackDados['rg'] ?? null,
+        'contribuinte' => isset($fallbackDados['contribuinte']) ? (int) $fallbackDados['contribuinte'] : null,
+        'telefone' => $fallbackDados['telefone'] ?? ($fallbackDados['fone'] ?? null),
+        'email' => $fallbackDados['email'] ?? null,
+    ]);
+
+    if (isset($fallbackDados['endereco']) && is_array($fallbackDados['endereco'])) {
+        $enderecoNormalizado = normalizarEstruturaEndereco($fallbackDados['endereco']);
+        if (!empty($enderecoNormalizado)) {
+            $fallback['endereco'] = $enderecoNormalizado;
+        }
+    }
+
+    if (isset($fallbackDados['enderecos']) && is_array($fallbackDados['enderecos'])) {
+        foreach ($fallbackDados['enderecos'] as $enderecoAlternativo) {
+            if (!is_array($enderecoAlternativo)) {
+                continue;
+            }
+
+            $enderecoNormalizado = normalizarEstruturaEndereco($enderecoAlternativo);
+            if (!empty($enderecoNormalizado)) {
+                $fallback['endereco'] = $enderecoNormalizado;
+                break;
+            }
+        }
+    }
+
     if ($fallbackAjustado) {
         $fallback['__nomeIncompleto'] = true;
     }
@@ -369,22 +419,16 @@ function obterContatoParaNfe(int $clienteId, string $clienteNome): array
     }
 
     foreach ($origensEndereco as $enderecoFonte) {
-        $endereco = [
-            'endereco' => $enderecoFonte['endereco'] ?? ($enderecoFonte['logradouro'] ?? null),
-            'numero' => $enderecoFonte['numero'] ?? null,
-            'complemento' => $enderecoFonte['complemento'] ?? null,
-            'bairro' => $enderecoFonte['bairro'] ?? null,
-            'cep' => $enderecoFonte['cep'] ?? null,
-            'municipio' => $enderecoFonte['municipio'] ?? ($enderecoFonte['cidade'] ?? null),
-            'uf' => $enderecoFonte['uf'] ?? ($enderecoFonte['estado'] ?? null),
-            'pais' => $enderecoFonte['pais'] ?? null,
-        ];
+        $enderecoNormalizado = normalizarEstruturaEndereco($enderecoFonte);
 
-        $enderecoLimpo = limparCamposNulos($endereco);
-        if (!empty($enderecoLimpo)) {
-            $contato['endereco'] = $enderecoLimpo;
+        if (!empty($enderecoNormalizado)) {
+            $contato['endereco'] = $enderecoNormalizado;
             break;
         }
+    }
+
+    if (empty($contato['endereco']) && !empty($fallback['endereco'])) {
+        $contato['endereco'] = $fallback['endereco'];
     }
 
     return limparCamposNulos($contato);
@@ -446,7 +490,16 @@ function criarNotaFiscalAutomatica(
         return $resultado;
     }
 
-    $contato = obterContatoParaNfe($clienteId, $clienteNome);
+    $contatoFallback = [];
+    if (isset($pedidoDados['contato']) && is_array($pedidoDados['contato'])) {
+        $contatoFallback = $pedidoDados['contato'];
+    }
+
+    if (isset($pedidoDados['transporte']['etiqueta']) && is_array($pedidoDados['transporte']['etiqueta'])) {
+        $contatoFallback['endereco'] = $pedidoDados['transporte']['etiqueta'];
+    }
+
+    $contato = obterContatoParaNfe($clienteId, $clienteNome, $contatoFallback);
     $nomeIncompleto = !empty($contato['__nomeIncompleto']);
     unset($contato['__nomeIncompleto']);
     if ($nomeIncompleto) {
