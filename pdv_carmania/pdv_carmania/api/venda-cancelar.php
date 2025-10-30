@@ -67,9 +67,9 @@ function blingRequest(string $method, string $path, $body = null): array
     return ['http' => $http, 'body' => $resp];
 }
 
-function executarBlingAcao(string $etapa, string $path): void
+function executarBlingAcao(string $etapa, string $path, string $method = 'POST'): void
 {
-    $resultado = blingRequest('POST', $path);
+    $resultado = blingRequest($method, $path);
     $http = (int) ($resultado['http'] ?? 0);
     if ($http < 200 || $http >= 300) {
         $detalhe = trim((string) ($resultado['body'] ?? ''));
@@ -127,7 +127,7 @@ try {
 
     executarBlingAcao('estornar o estoque', "/pedidos/vendas/{$vendaId}/estornar-estoque");
     executarBlingAcao('estornar o contas a receber', "/pedidos/vendas/{$vendaId}/estornar-contas");
-    executarBlingAcao('alterar a situação para cancelada', "/pedidos/vendas/{$vendaId}/situacoes/12");
+    executarBlingAcao('alterar a situação para cancelada', "/pedidos/vendas/{$vendaId}/situacoes/12", 'PATCH');
 
     $db->exec('BEGIN IMMEDIATE');
     try {
