@@ -4,6 +4,24 @@ if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
+
+$dbUsuarios = __DIR__ . '/../data/pdv_users.sqlite';
+$estoquePadraoId = null;
+
+try {
+    if (file_exists($dbUsuarios)) {
+        $db = new SQLite3($dbUsuarios);
+        $stmt = $db->prepare('SELECT estoque_padrao FROM usuarios WHERE LOWER(TRIM(usuario)) = LOWER(TRIM(?)) LIMIT 1');
+        $stmt->bindValue(1, $_SESSION['usuario'], SQLITE3_TEXT);
+        $res = $stmt->execute();
+        $row = $res ? $res->fetchArray(SQLITE3_ASSOC) : null;
+        if ($row && !empty($row['estoque_padrao'])) {
+            $estoquePadraoId = trim((string) $row['estoque_padrao']);
+        }
+    }
+} catch (Throwable $e) {
+    error_log('Erro ao buscar estoque padrão do usuário: ' . $e->getMessage());
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -45,6 +63,14 @@ if (!isset($_SESSION['usuario'])) {
       background-color: red;
       color: white;
       font-size: 0.8rem;
+    }
+    .badge-estoque {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      background-color: #0d6efd;
+      color: white;
+      font-size: 0.75rem;
     }
     .cart-btn {
       position: fixed;
@@ -110,6 +136,12 @@ if (!isset($_SESSION['usuario'])) {
     <div class="row mb-3">
       <div class="col-12 col-lg-6 mx-auto">
         <input type="text" id="campoBusca" class="form-control" placeholder="Buscar produto por nome, código, código de barras ou GTIN..." />
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" value="1" id="filtroEstoque">
+          <label class="form-check-label" for="filtroEstoque">
+            Mostrar apenas produtos com estoque disponível
+          </label>
+        </div>
       </div>
     </div>
 
@@ -140,10 +172,19 @@ if (!isset($_SESSION['usuario'])) {
     <button class="btn btn-danger btn-sm mt-2" onclick="limparCarrinho()">Limpar Carrinho</button>
   </div>
 
+  <script>
+    window.ESTOQUE_PADRAO_ID = <?php echo json_encode($estoquePadraoId); ?>;
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
   let carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
   let todosProdutos = [];
+  let estoquePorProduto = {};
+
+  const formatadorEstoque = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  });
 
   const removerAcentos = (texto) => typeof texto === 'string'
     ? texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -223,8 +264,22 @@ if (!isset($_SESSION['usuario'])) {
       carrinho = [];
       localStorage.setItem('carrinho', JSON.stringify(carrinho));
       atualizarContadorCarrinho();
-      filtrarProdutos(document.getElementById('campoBusca').value);
+      filtrarProdutos(campoBusca.value);
     }
+  }
+
+  function obterEstoqueProduto(produtoId) {
+    if (produtoId == null) {
+      return 0;
+    }
+    const chave = String(produtoId);
+    const valor = estoquePorProduto[chave];
+    return typeof valor === 'number' ? valor : Number(valor) || 0;
+  }
+
+  function atualizarBadgeEstoque(elemento, produtoId) {
+    const saldo = obterEstoqueProduto(produtoId);
+    elemento.textContent = `Estoque: ${formatadorEstoque.format(saldo)}`;
   }
 
   function criarCardProduto(produto) {
@@ -251,6 +306,11 @@ if (!isset($_SESSION['usuario'])) {
       img.onerror = null;
       img.src = placeholder;
     };
+
+    const badgeEstoque = document.createElement('span');
+    badgeEstoque.className = 'badge rounded-pill badge-estoque';
+    badgeEstoque.id = 'badge-estoque-' + produto.id;
+    atualizarBadgeEstoque(badgeEstoque, produto.id);
 
     const badge = document.createElement('span');
     badge.className = 'badge rounded-pill badge-carrinho';
@@ -300,6 +360,7 @@ if (!isset($_SESSION['usuario'])) {
     body.appendChild(controls);
 
     card.appendChild(img);
+    card.appendChild(badgeEstoque);
     card.appendChild(badge);
     card.appendChild(body);
     col.appendChild(card);
@@ -323,8 +384,14 @@ if (!isset($_SESSION['usuario'])) {
     const termosNome = obterTermosBusca(termo);
     const termoLower = String(termo || '').toLowerCase();
     const termoLowerCompacto = termoLower.replace(/\s+/g, '');
+    const apenasComEstoque = Boolean(filtroEstoqueCheckbox?.checked);
 
     const filtrados = todosProdutos.filter(p => {
+      const estoqueDisponivel = obterEstoqueProduto(p.id);
+      if (apenasComEstoque && estoqueDisponivel <= 0) {
+        return false;
+      }
+
       if (!termoNormalizado) {
         return true;
       }
@@ -350,6 +417,7 @@ if (!isset($_SESSION['usuario'])) {
   }
 
   const campoBusca = document.getElementById('campoBusca');
+  const filtroEstoqueCheckbox = document.getElementById('filtroEstoque');
 
   function normalizarCodigoBarras(valor) {
     const texto = String(valor ?? '').trim().toLowerCase();
@@ -392,6 +460,10 @@ if (!isset($_SESSION['usuario'])) {
     filtrarProdutos(termo);
   });
 
+  filtroEstoqueCheckbox?.addEventListener('change', () => {
+    filtrarProdutos(campoBusca.value);
+  });
+
   campoBusca.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -401,6 +473,26 @@ if (!isset($_SESSION['usuario'])) {
       }
     }
   });
+
+  async function carregarEstoque(depositoId) {
+    try {
+      const deposito = depositoId == null ? '' : String(depositoId);
+      const parametro = deposito === '' ? '' : `?depositoId=${encodeURIComponent(deposito)}`;
+      const resposta = await fetch(`../api/produtos-estoque.php${parametro}`);
+      const dados = await resposta.json();
+      if (dados.ok !== false && typeof dados.estoque === 'object' && dados.estoque !== null) {
+        estoquePorProduto = dados.estoque;
+      } else {
+        estoquePorProduto = {};
+        if (dados?.erro) {
+          console.error('Erro ao carregar estoque:', dados.erro);
+        }
+      }
+    } catch (erro) {
+      estoquePorProduto = {};
+      console.error('Erro ao buscar estoque dos produtos:', erro);
+    }
+  }
 
   async function carregarProdutos() {
     try {
@@ -412,7 +504,8 @@ if (!isset($_SESSION['usuario'])) {
         codigo: (produto && produto.codigo) ? produto.codigo : '',
         gtin: (produto && produto.gtin) ? produto.gtin : ''
       }));
-      filtrarProdutos(document.getElementById('campoBusca').value);
+      await carregarEstoque(window.ESTOQUE_PADRAO_ID ?? '');
+      filtrarProdutos(campoBusca.value);
     } catch (erro) {
       console.error('Erro ao carregar os produtos:', erro);
     }
