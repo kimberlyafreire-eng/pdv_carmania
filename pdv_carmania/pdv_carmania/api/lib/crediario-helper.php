@@ -137,48 +137,104 @@ function consultarSaldoCrediarioCliente($clienteId, ?callable $logger = null): ?
     }
 
     $payload = ['clienteId' => (string) $clienteId];
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scheme      = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host        = $_SERVER['HTTP_HOST'] ?? '';
+    $serverAddr  = $_SERVER['SERVER_ADDR'] ?? '';
 
-    $paths = [
-        '/pdv_carmania/api/crediario/saldo.php',
-        '/pdv_carmania/api/saldo.php',
-    ];
+    $scriptDir = '';
+    if (!empty($_SERVER['SCRIPT_NAME'])) {
+        $dir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
+        if ($dir !== '/' && $dir !== '.') {
+            $scriptDir = $dir;
+        }
+    }
+
+    $paths = [];
+    if ($scriptDir !== '') {
+        $paths[] = rtrim($scriptDir, '/') . '/crediario/saldo.php';
+    }
+    $paths[] = '/pdv_carmania/api/crediario/saldo.php';
+    $paths[] = '/api/crediario/saldo.php';
+    $paths[] = '/crediario/saldo.php';
+    $paths = array_values(array_unique(array_map(
+        static fn(string $path): string => '/' . ltrim($path, '/'),
+        array_filter($paths)
+    )));
+
+    $hosts = array_values(array_unique(array_filter([
+        $host,
+        $serverAddr,
+        '127.0.0.1',
+        'localhost',
+        '::1',
+    ])));
+
+    $schemes = ['https', 'http'];
+    if (!in_array($scheme, $schemes, true)) {
+        array_unshift($schemes, $scheme);
+    } else {
+        $schemes = array_unique(array_merge([$scheme], $schemes));
+    }
+
+    $tentativasRealizadas = [];
 
     foreach ($paths as $path) {
-        $url = $scheme . '://' . $host . $path;
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
-            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_TIMEOUT        => 15,
-        ]);
-        $resp = curl_exec($ch);
-        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err  = curl_error($ch);
-        curl_close($ch);
-
-        if ($logger) {
-            $logger(sprintf('↪️ saldo.php: POST %s (HTTP %d)%s', $url, $http, $err ? " ERR={$err}" : ''));
-        }
-
-        if ($http === 200 && $resp) {
-            $jsonSaldo = json_decode($resp, true);
-            if (!empty($jsonSaldo['ok']) && isset($jsonSaldo['saldoAtual'])) {
-                $saldo = round((float) $jsonSaldo['saldoAtual'], 2);
-                if ($logger) {
-                    $logger('✅ Saldo obtido via ' . $path . ' -> R$ ' . number_format($saldo, 2, ',', '.'));
+        foreach ($hosts as $tryHost) {
+            foreach ($schemes as $tryScheme) {
+                if ($tryScheme === 'https' && preg_match('/^(127\.0\.0\.1|localhost|::1)$/', $tryHost)) {
+                    continue;
                 }
-                return $saldo;
-            }
-            if ($logger) {
-                $logger('⚠️ Resposta inesperada de ' . $path . ' -> ' . $resp);
-            }
-        } else {
-            if ($logger) {
-                $logger('⚠️ Falha ao consultar ' . $path . " (HTTP {$http}) -> " . (string) $resp);
+
+                $url = $tryScheme . '://' . $tryHost . $path;
+                if (isset($tentativasRealizadas[$url])) {
+                    continue;
+                }
+                $tentativasRealizadas[$url] = true;
+
+                $ch = curl_init($url);
+                $options = [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST           => true,
+                    CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+                    CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                    CURLOPT_TIMEOUT        => 15,
+                ];
+
+                if ($tryScheme === 'https' && $tryHost !== $host) {
+                    $options[CURLOPT_SSL_VERIFYPEER] = false;
+                    $options[CURLOPT_SSL_VERIFYHOST] = 0;
+                }
+
+                curl_setopt_array($ch, $options);
+                $resp = curl_exec($ch);
+                $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $err  = curl_error($ch);
+                curl_close($ch);
+
+                if ($logger) {
+                    $logger(sprintf('↪️ saldo.php: POST %s (HTTP %d)%s', $url, $http, $err ? " ERR={$err}" : ''));
+                }
+
+                if ($http === 200 && $resp) {
+                    $jsonSaldo = json_decode($resp, true);
+                    if (!empty($jsonSaldo['ok']) && isset($jsonSaldo['saldoAtual'])) {
+                        $saldo = round((float) $jsonSaldo['saldoAtual'], 2);
+                        if ($logger) {
+                            $logger('✅ Saldo obtido via ' . $path . ' -> R$ ' . number_format($saldo, 2, ',', '.'));
+                        }
+                        return $saldo;
+                    }
+                    if ($logger) {
+                        $logger('⚠️ Resposta inesperada de ' . $path . ' -> ' . $resp);
+                    }
+                } else {
+                    if ($logger) {
+                        $logger('⚠️ Falha ao consultar ' . $path . " (HTTP {$http}) -> " . (string) $resp);
+                        if ($err) {
+                            $logger('ℹ️ cURL: ' . $err);
+                        }
+                    }
+                }
             }
         }
     }
